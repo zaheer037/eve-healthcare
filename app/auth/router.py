@@ -30,12 +30,18 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
     summary="Create a patient account",
 )
 def signup(data: SignupInput, service: AuthServiceDep) -> User:
-    return service.signup(data)
+    return service.signup(
+        email=data.email,
+        password=data.password.get_secret_value(),
+        full_name=data.full_name,
+        phone=data.phone,
+    )
 
 
 @auth_router.post("/login", summary="Log in with JSON and receive an access token")
 def login(credentials: LoginInput, service: AuthServiceDep) -> TokenRead:
-    return service.login(credentials.email, credentials.password.get_secret_value())
+    token, expires_in = service.login(credentials.email, credentials.password.get_secret_value())
+    return TokenRead(access_token=token, expires_in=expires_in)
 
 
 @auth_router.post(
@@ -43,7 +49,8 @@ def login(credentials: LoginInput, service: AuthServiceDep) -> TokenRead:
     summary="Log in with the OAuth2 password form (for Swagger's Authorize button)",
 )
 def token(form: TokenInput, service: AuthServiceDep) -> TokenRead:
-    return service.login(form.username, form.password.get_secret_value())
+    access_token, expires_in = service.login(form.username, form.password.get_secret_value())
+    return TokenRead(access_token=access_token, expires_in=expires_in)
 
 
 @users_router.get("/me", response_model=UserRead, summary="The signed-in user")
