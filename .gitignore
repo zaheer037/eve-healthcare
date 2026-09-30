@@ -12,8 +12,8 @@ htmlcov/
 build/
 dist/
 
-# Author-only working files (ARCHITECTURE.md until the public version replaces it)
-docs/ARCHITECTURE.md
+# Author-only working files (the working spec and its drafts, never published)
+docs/ARCHITECTURE.working.md
 docs/spikes/
 docs/.draft*/
 EVE_SDE_Intern_Hiring_Assignment_*.pdf

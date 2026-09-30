@@ -219,7 +219,7 @@ so the models and the migrations cannot drift. The full DDL and the index plan a
 - **Refresh tokens and revocation.** Access tokens live 30 minutes and cannot be withdrawn earlier.
 - **Refunds.** A cancelled paid booking keeps its payment, and nothing gives the money back.
 - **Slot capacity and opening hours.** Every centre has unlimited capacity now.
-- **A real gateway and a background worker.** The payment then becomes two-phase (create, call the gateway with no lock held, settle), with a reconciler for stuck `PENDING` payments and an outbox for events. The design and the tests it needs are in section 8.6 of the architecture document.
+- **A real gateway and a background worker.** The payment then becomes two-phase (create, call the gateway with no lock held, settle), with a reconciler for stuck `PENDING` payments and an outbox for events. The design and the tests it needs are in section 6.6 of the architecture document.
 - **Keyset pagination**, when a user can hold thousands of bookings. The cap of 10,000 on `offset` bounds the cost today.
 - **Metrics and tracing** (Prometheus, OpenTelemetry). The service logs structured events and a request ID today.
 - **Least-privilege database roles**: one role runs migrations and another has data rights only.
@@ -269,20 +269,23 @@ the framework imports that each layer may use.
 
 ### Design decisions
 
+The full list has 22 records, each with the alternatives that were rejected, in section 11 of
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The ones that shape the code most:
+
 | ID | Decision | Why |
 |---|---|---|
-| ADR-1 | Synchronous handlers and SQLAlchemy on psycopg 3. | The database driver blocks. Plain `def` handlers run in FastAPI's thread pool, and nothing waits on an event loop. |
-| ADR-2 | SQLAlchemy 2.0 with typed `Mapped[]` models. | A composite foreign key, partial indexes, `ON CONFLICT` and row locks need the full ORM and Core. |
-| ADR-3 | Another user's booking answers `403`. | The IDs are random UUIDs. One function decides, so `404` is a one-line change. |
-| ADR-4 | JSON login plus the OAuth2 form endpoint. | Swagger's **Authorize** button needs the form. |
-| ADR-5 | A failed payment fails the booking for good. | It keeps the state machine small. The user books again. |
-| ADR-6 | No Celery. The webhook retries a transient failure in process, a bounded number of times. | Nothing here needs a queue yet. |
-| ADR-7 | RFC 9457 problem responses with a stable `code`. | A client switches on the code, not on the text. |
-| ADR-8 | PostgreSQL 17 and Python 3.12. | A supported, tested combination. |
-| ADR-9 | Production-grade scope over the PDF's 3 to 4 hours. | The evaluation weights quality, design, edge cases and tests. |
-| ADR-10 | Paying is one short transaction. | The simulator does no I/O, so no lock spans a network call. A real gateway needs two phases. |
-| ADR-11 | The webhook signature is required by default. | An unsigned endpoint that confirms payments is a hole. Production refuses to turn it off. |
-| ADR-12 | Passwords need 15 characters. | The NIST baseline for a password that is the only factor. It is a setting. |
+| ADR-01 | A modular monolith: `auth`, `catalog`, `bookings` and `payments` packages, and one `models/` folder. | One deployable unit, and a change to a feature stays in one package. |
+| ADR-02 | Synchronous handlers and SQLAlchemy on psycopg 3. | The driver blocks. Plain `def` handlers run in FastAPI's thread pool, so the event loop never stalls. |
+| ADR-03 | SQLAlchemy 2.0, not SQLModel, and concrete classes, not repository interfaces. | The composite foreign key, partial indexes, `ON CONFLICT` and row locks need the full ORM and Core, and the tests use a real PostgreSQL. |
+| ADR-04 | The service owns the transaction, and the booking is the aggregate root: lock the booking first, with the owner in the query. | One lock order, so pay, webhook and cancel cannot deadlock, and a stranger never waits behind the owner. |
+| ADR-05 | Paying is one short transaction, and one `settle()` function serves the payment and the webhook. | The simulator does no I/O, so no lock spans a network call. A real gateway needs two phases. |
+| ADR-06 | The webhook checks an HMAC on the raw body, required by default, and stores every signed event in an inbox. | An unsigned endpoint that confirms payments is a hole. Production refuses to turn the check off. |
+| ADR-07 | Another user's booking answers `403`. | The IDs are random UUIDs. One function decides, so `404` is a one-line change. |
+| ADR-08 | JSON login plus the OAuth2 form endpoint. | Swagger's **Authorize** button needs the form. |
+| ADR-09 | A failed payment fails the booking for good. | It keeps the state machine small. The user books again. |
+| ADR-10 | Errors are RFC 9457 problem responses with a stable `code`. | A client switches on the code, not on the text. |
+| ADR-13 | Argon2id, a JWT with a pinned algorithm, a login throttle and passwords of 15 or more characters. | The current guidance of FastAPI and NIST. The minimum is a setting. |
+| ADR-14 | No Celery. A bounded retry of transient failures runs in process. | Nothing here needs a queue yet, and the inbox makes a worker additive. |
 
 ### Security notes
 
