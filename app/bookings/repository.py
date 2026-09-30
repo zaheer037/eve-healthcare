@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import ColumnElement, Select, exists, func, select
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -126,22 +126,35 @@ class BookingRepository:
 
     # ---------------------------------------------------------------- cancel
 
-    def lock_owned(self, booking_id: uuid.UUID, user_id: uuid.UUID) -> Booking | None:
-        """Lock the user's booking, or return `None`. The rules of spec section 4.2:
+    @staticmethod
+    def _locking_select(*criteria: ColumnElement[bool]) -> Select[tuple[Booking]]:
+        """The one form of a booking lock, so no caller can forget a rule of spec section 4.2:
 
         1. `FOR NO KEY UPDATE`, because a child insert takes `FOR KEY SHARE` on this row.
         2. `populate_existing`, or the ORM returns a stale object that is already in the session.
-        3. The owner predicate is in the query, so a stranger finds no row and never waits behind
-           the owner's lock (sharp edge 30).
-        4. One table, no joined loading.
+        3. One table, no joined loading.
+        The fourth rule, the owner predicate, is the caller's criterion.
         """
-        stmt = (
+        return (
             select(Booking)
-            .where(Booking.id == booking_id, Booking.user_id == user_id)
+            .where(*criteria)
             .with_for_update(key_share=True)
             .execution_options(populate_existing=True)
         )
+
+    def lock_owned(self, booking_id: uuid.UUID, user_id: uuid.UUID) -> Booking | None:
+        """Lock the user's booking, or return `None`.
+
+        The owner predicate is in the lock query, so a stranger finds no row and never waits behind
+        the owner's lock (sharp edge 30).
+        """
+        stmt = self._locking_select(Booking.id == booking_id, Booking.user_id == user_id)
         return self._session.scalar(stmt)
+
+    def lock(self, booking_id: uuid.UUID) -> Booking | None:
+        """Lock a booking by its id, for the webhook. It has no user: it found the booking
+        through its own payment record and trusts nothing that the payload says about it."""
+        return self._session.scalar(self._locking_select(Booking.id == booking_id))
 
     def has_pending_payment(self, booking_id: uuid.UUID) -> bool:
         """A separate statement after the lock, so it sees every payment that a rival committed

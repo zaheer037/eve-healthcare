@@ -1,5 +1,6 @@
 """Helpers shared by test modules. Fixtures live in conftest.py."""
 
+import json
 import threading
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -75,3 +76,46 @@ class QueryCounter:
     def assert_at_most(self, budget: int) -> None:
         listing = "\n".join(f"  {i}. {s[:110]}" for i, s in enumerate(self.statements, 1))
         assert self.count <= budget, f"{self.count} statements, budget {budget}:\n{listing}"
+
+
+def _index_names(node: Any) -> set[str]:
+    """Every index that a plan (a parsed `EXPLAIN (FORMAT JSON)`) reads or uses to arbitrate."""
+    names: set[str] = set()
+    if isinstance(node, dict):
+        if "Index Name" in node:
+            names.add(node["Index Name"])
+        names.update(node.get("Conflict Arbiter Indexes", []))
+        for value in node.values():
+            names |= _index_names(value)
+    elif isinstance(node, list):
+        for item in node:
+            names |= _index_names(item)
+    return names
+
+
+def indexes_used(engine: Engine, action: Callable[[], object]) -> set[str]:
+    """Run `action`, then explain each statement that it ran, and return the indexes that show up.
+
+    A table of a few rows is read with a sequential scan even when a fitting index exists, so
+    the plans are made with sequential scans off. That shows which indexes the planner can use,
+    and this is what the index plan of spec section 5.4 promises. `EXPLAIN` runs nothing, so it
+    is safe for an `UPDATE` or an `INSERT` too.
+    """
+    seen: list[tuple[str, Any]] = []
+
+    def record(_conn: Any, _cursor: Any, statement: str, parameters: Any, *_rest: Any) -> None:
+        seen.append((statement, parameters))
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        action()
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    names: set[str] = set()
+    with engine.connect() as connection, connection.begin():
+        connection.exec_driver_sql("SET LOCAL enable_seqscan = off")
+        for statement, parameters in seen:
+            plan = connection.exec_driver_sql(f"EXPLAIN (FORMAT JSON) {statement}", parameters)
+            raw = plan.scalar_one()
+            names |= _index_names(raw if isinstance(raw, list) else json.loads(raw))
+    return names
