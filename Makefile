@@ -2,7 +2,7 @@
 COMPOSE := docker compose -f docker-compose.yml
 COMPOSE_DEV := $(COMPOSE) -f docker-compose.dev.yml
 
-.PHONY: help up db test test-docker lint fmt typecheck migrate seed check requirements
+.PHONY: help up db test test-unit test-docker lint fmt typecheck migrate seed check requirements
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -15,6 +15,9 @@ db: ## Start PostgreSQL for runs on the host (publishes the port)
 
 test: ## Run the tests on the host (needs `make db`)
 	uv run pytest -q
+
+test-unit: ## Run the unit tests only (no database needed)
+	uv run pytest -q tests/unit
 
 test-docker: ## Run the tests in Docker only
 	$(COMPOSE) --profile test run --rm test
