@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.pagination import PageParams
-from app.models.booking import ACTIVE_STATUSES, Booking
+from app.models.booking import ACTIVE_STATUSES, Booking, BookingStatus
 from app.models.catalog import Centre, CentreTest, DiagnosticTest
 from app.models.payment import Payment, PaymentStatus
 
@@ -84,18 +84,30 @@ class BookingRepository:
 
     # ---------------------------------------------------------------- reads
 
-    def count_for_user(self, user_id: uuid.UUID) -> int:
-        stmt = select(func.count()).select_from(Booking).where(Booking.user_id == user_id)
+    @staticmethod
+    def _of_user(
+        user_id: uuid.UUID, status: BookingStatus | None
+    ) -> tuple[ColumnElement[bool], ...]:
+        """The user's bookings, all or with one status. The count and the page share it."""
+        if status is None:
+            return (Booking.user_id == user_id,)
+        return (Booking.user_id == user_id, Booking.status == status)
+
+    def count_for_user(self, user_id: uuid.UUID, status: BookingStatus | None = None) -> int:
+        stmt = select(func.count()).select_from(Booking).where(*self._of_user(user_id, status))
         return self._session.scalar(stmt) or 0
 
-    def list_for_user(self, user_id: uuid.UUID, page: PageParams) -> list[Booking]:
+    def list_for_user(
+        self, user_id: uuid.UUID, page: PageParams, status: BookingStatus | None = None
+    ) -> list[Booking]:
         """One page of the user's bookings, newest first, with the names of the centre and test.
 
         The order is that of `ix_bookings_user_created`, and the id breaks a tie in `created_at`.
+        A status filter runs on the few rows of one user that the index already found.
         """
         stmt = (
             select(Booking)
-            .where(Booking.user_id == user_id)
+            .where(*self._of_user(user_id, status))
             .options(
                 joinedload(Booking.centre, innerjoin=True),
                 joinedload(Booking.test, innerjoin=True),

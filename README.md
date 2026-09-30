@@ -84,7 +84,7 @@ string, and times are ISO 8601 with an offset. Each collection answers both `/ce
 | `GET /tests/`, `GET /tests/{id}` | anyone | List and read diagnostic tests. |
 | `POST /tests/`, `PATCH /tests/{id}`, `DELETE /tests/{id}` | admin | Manage the test catalogue. |
 | `POST /bookings/` | user | Book a test at a centre. The price is copied from the centre's price. |
-| `GET /bookings/` | user | My bookings, newest first. |
+| `GET /bookings/` | user | My bookings, newest first. Filter: `status`. |
 | `GET /bookings/{id}` | owner | One booking with its payments. |
 | `POST /bookings/{id}/cancel` | owner | Cancel a booking. A repeat answers `200` and changes nothing. |
 | `POST /payments/` | owner | Pay a booking with the simulator. A repeat returns the same payment. |

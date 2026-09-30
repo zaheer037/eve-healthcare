@@ -703,7 +703,7 @@ A parametrised unit test walks every row. No database is involved. The webhook h
 | 14 | `DELETE /tests/{test_id}` | Admin | `204` | 401, 403, 404, 422 | 1 | P1 |
 | 15 | `PUT /centres/{centre_id}/tests/{test_id}` | Admin | `201` created or `200` updated (centre-test) | 401, 403, 404, 422 | 1 | P0 |
 | 16 | `POST /bookings/` | User | `201` booking | 401, 404, 409, 422 | 3 | P0 |
-| 17 | `GET /bookings/` | User | `200` page (own) | 401, 422 | 2 | P0 |
+| 17 | `GET /bookings/` | User | `200` page (own), optional `status` filter | 401, 422 | 2 | P0 |
 | 18 | `GET /bookings/{booking_id}` | User (owner) | `200` booking with payments | 401, 403, 404, 422 | 1 | P0 |
 | 19 | `POST /bookings/{booking_id}/cancel` | User (owner) | `200` booking | 401, 403, 404, 409, 422 | 4 (repeat: 2) | P0 |
 | 20 | `POST /payments/` | User (owner) | `201`, `202` or `200` payment | 401, 403, 404, 409, 422 | 4 (replay: 2) | P0 |

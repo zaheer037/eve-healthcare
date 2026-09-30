@@ -28,7 +28,8 @@ def _to_the_minute(value: datetime) -> datetime:
 
 
 # A naive datetime is refused: a booking needs an instant. The offset is kept as it came, because
-# the window check compares aware datetimes and never converts them.
+# the window check compares aware datetimes and never converts them. The service converts to UTC
+# after that check, so the response and every later read show the same spelling.
 AppointmentAt = Annotated[
     AwareDatetime, BeforeValidator(_text_or_datetime_only), AfterValidator(_to_the_minute)
 ]

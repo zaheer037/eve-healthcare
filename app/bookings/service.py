@@ -1,7 +1,7 @@
 """Booking use cases. The service owns the transaction and ends it before it returns."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from sqlalchemy.orm import Session
@@ -65,6 +65,9 @@ class BookingService:
             min_lead=timedelta(minutes=self._settings.booking_min_lead_minutes),
             max_advance=timedelta(days=self._settings.booking_max_advance_days),
         )
+        # The same instant, spelled as every read spells it. The window check has ruled out an
+        # offset that overflows, so the conversion is safe here and not before it.
+        appointment_at = appointment_at.astimezone(UTC)
         check_active_cap(
             active=self._repository.count_active(user_id, now),
             cap=self._settings.booking_max_active_per_user,
@@ -84,14 +87,17 @@ class BookingService:
         )
         return booking
 
-    def list_for_user(self, user_id: uuid.UUID, page: PageParams) -> tuple[list[Booking], int]:
-        """One page of the user's bookings and their total. Two statements: the count, the page.
+    def list_for_user(
+        self, user_id: uuid.UUID, page: PageParams, status: BookingStatus | None = None
+    ) -> tuple[list[Booking], int]:
+        """One page of the user's bookings, all or those with `status`, and their total. Two
+        statements: the count, the page.
 
         Raises: nothing.
         Commits: no.
         """
-        total = self._repository.count_for_user(user_id)
-        return self._repository.list_for_user(user_id, page), total
+        total = self._repository.count_for_user(user_id, status)
+        return self._repository.list_for_user(user_id, page, status), total
 
     def get_owned(self, user_id: uuid.UUID, booking_id: uuid.UUID) -> Booking:
         """The user's booking with its payments. One statement, and a second only on a miss.

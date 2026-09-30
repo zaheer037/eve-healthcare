@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -87,7 +87,6 @@ def test_a_booking_is_created_pending_with_the_price_copied_from_the_offering(
     centre = make_centre(db_session, name="City Lab")
     test = make_diagnostic_test(db_session, code="CBC", name="Complete Blood Count")
     offering = make_centre_test(db_session, centre=centre, test=test, price=Decimal("499"))
-    when = datetime(2031, 5, 1, 10, 0, tzinfo=UTC)
     response = post_booking(
         client, patient_headers, offering, when=datetime.now(UTC) + timedelta(days=9)
     )
@@ -109,7 +108,6 @@ def test_a_booking_is_created_pending_with_the_price_copied_from_the_offering(
     assert body["test"] == {"id": str(test.id), "name": "Complete Blood Count"}
     assert (body["amount"], body["currency"], body["status"]) == ("499.00", "INR", "PENDING")
     assert body["appointment_at"].endswith("Z")
-    assert when  # the value above only documents the wire format
     stored = db_session.get(Booking, uuid.UUID(body["id"]))
     assert stored is not None
     assert stored.status is BookingStatus.PENDING
@@ -128,6 +126,21 @@ def test_seconds_are_cut_off_and_the_offset_is_kept_in_the_stored_instant(
     stored = db_session.get(Booking, uuid.UUID(response.json()["id"]))
     assert stored is not None
     assert stored.appointment_at == start
+
+
+def test_the_create_response_shows_the_instant_in_utc_like_every_read(
+    client: TestClient, patient_headers: Headers, db_session: Session
+) -> None:
+    """A client that sends `+05:30` gets the same instant back with a `Z`, as a later read does."""
+    offering = make_centre_test(db_session)
+    start = (datetime.now(UTC) + timedelta(days=9)).replace(hour=10, minute=7, second=0)
+    sent = start.astimezone(timezone(timedelta(hours=5, minutes=30))).replace(second=45)
+    created = post_booking(client, patient_headers, offering, when=sent.isoformat())
+    assert created.status_code == 201
+    shown = created.json()["appointment_at"]
+    read = client.get(f"/bookings/{created.json()['id']}", headers=patient_headers).json()
+    assert shown.endswith("Z")
+    assert shown == read["appointment_at"]
 
 
 def test_a_later_price_change_does_not_touch_the_booking(
@@ -384,6 +397,40 @@ def test_the_list_holds_only_my_bookings_newest_first(
     assert body["pagination"] == {"total": 2, "limit": 20, "offset": 0}
     assert {"centre", "test", "amount", "status"} <= set(body["data"][0])
     assert "payments" not in body["data"][0]  # the list is the short form
+
+
+def test_the_list_can_be_filtered_by_status_and_the_total_follows(
+    client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
+) -> None:
+    offering = make_centre_test(db_session)
+    confirmed = make_booking(
+        db_session,
+        user=patient,
+        offering=offering,
+        status=BookingStatus.CONFIRMED,
+        appointment_at=future_slot(3),
+    )
+    for day, status in ((4, BookingStatus.CANCELLED), (5, BookingStatus.FAILED)):
+        make_booking(
+            db_session,
+            user=patient,
+            offering=offering,
+            status=status,
+            appointment_at=future_slot(day),
+        )
+    filtered = client.get("/bookings/", params={"status": "CONFIRMED"}, headers=patient_headers)
+    assert [item["id"] for item in filtered.json()["data"]] == [str(confirmed.id)]
+    assert filtered.json()["pagination"]["total"] == 1
+    assert client.get("/bookings/", headers=patient_headers).json()["pagination"]["total"] == 3
+
+
+@pytest.mark.parametrize("status", ["DONE", "confirmed", ""])
+def test_a_status_outside_the_four_is_422_and_names_the_field(
+    client: TestClient, patient_headers: Headers, status: str
+) -> None:
+    response = client.get("/bookings/", params={"status": status}, headers=patient_headers)
+    assert response.status_code == 422
+    assert [item["field"] for item in response.json()["errors"]] == ["query.status"]
 
 
 def test_the_list_pages(

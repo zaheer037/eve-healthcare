@@ -26,6 +26,7 @@ from app.core.http import located
 from app.core.pagination import Page, PageParamsDep
 from app.core.problem import problems
 from app.core.routing import TolerantRouter
+from app.models.booking import BookingStatus
 
 router = TolerantRouter(prefix="/bookings", tags=["bookings"])
 
@@ -77,9 +78,13 @@ def create_booking(
     responses=problems(*SIGNED_IN, ValidationFailed),
 )
 def list_bookings(
-    user: CurrentUser, service: BookingServiceDep, page: PageParamsDep
+    user: CurrentUser,
+    service: BookingServiceDep,
+    page: PageParamsDep,
+    status: BookingStatus | None = None,
 ) -> Page[BookingRead]:
-    bookings, total = service.list_for_user(user.id, page)
+    """`status` keeps only the bookings that have it, and the total counts only those."""
+    bookings, total = service.list_for_user(user.id, page, status)
     return Page[BookingRead](
         data=[BookingRead.model_validate(booking) for booking in bookings],
         pagination=page.describe(total),
