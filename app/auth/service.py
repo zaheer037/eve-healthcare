@@ -27,6 +27,11 @@ class AuthService:
         """Create a patient. There is no pre-check `SELECT`: the unique index decides.
 
         Two simultaneous signups with one email cannot both pass. The loser gets a 409.
+
+        Raises:
+            EmailAlreadyRegistered: an account with this email exists, in any letter case.
+
+        Commits: yes.
         """
         user = User(
             email=email,
@@ -49,6 +54,11 @@ class AuthService:
 
         An unknown email is verified against the dummy hash, so both failures take the same time
         and give the same answer. Only a failure counts against the account.
+
+        Raises:
+            InvalidCredentials: the email is unknown or the password is wrong.
+
+        Commits: no.
         """
         user = self._users.get_by_email(email)
         verified = verify_password(password, user.password_hash if user else self._dummy_hash)

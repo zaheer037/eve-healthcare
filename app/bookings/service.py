@@ -42,6 +42,15 @@ class BookingService:
         The cap is soft: two simultaneous requests can both pass the count. `# ponytail: soft cap
         -> lock the user row with SELECT ... FOR NO KEY UPDATE if the cap must be exact`. The
         unique index on the active slot decides between two identical requests.
+
+        Raises:
+            CentreTestNotFound: the centre does not offer this test now (unknown, unavailable or
+                inactive).
+            AppointmentOutOfWindow: the start is too soon or too far ahead.
+            BookingLimitReached: the user already holds the maximum of active bookings.
+            DuplicateBooking: the user already holds this slot.
+
+        Commits: yes.
         """
         offering = self._repository.find_offering(centre_id, test_id)
         if offering is None:  # unknown, unavailable and inactive give one answer
@@ -66,12 +75,23 @@ class BookingService:
         return booking
 
     def list_for_user(self, user_id: uuid.UUID, page: PageParams) -> tuple[list[Booking], int]:
-        """One page of the user's bookings and their total. Two statements: the count, the page."""
+        """One page of the user's bookings and their total. Two statements: the count, the page.
+
+        Raises: nothing.
+        Commits: no.
+        """
         total = self._repository.count_for_user(user_id)
         return self._repository.list_for_user(user_id, page), total
 
     def get_owned(self, user_id: uuid.UUID, booking_id: uuid.UUID) -> Booking:
-        """The user's booking with its payments. One statement, and a second only on a miss."""
+        """The user's booking with its payments. One statement, and a second only on a miss.
+
+        Raises:
+            BookingNotFound: no booking has this ID.
+            Forbidden: the booking belongs to another user.
+
+        Commits: no.
+        """
         booking = self._repository.get_owned_with_payments(booking_id, user_id)
         if booking is None:
             raise owner_error(
@@ -86,6 +106,14 @@ class BookingService:
         The row lock makes the check for a pending payment and the status change one step
         against a payment or a webhook (spec section 4.2). A refund is out of scope, so a paid
         booking keeps its `SUCCESS` payment (assumption A7).
+
+        Raises:
+            BookingNotFound: no booking has this ID.
+            Forbidden: the booking belongs to another user.
+            InvalidBookingStatus: the booking failed, and a failed booking is final.
+            PaymentInProgress: a payment for the booking is still pending.
+
+        Commits: yes.
         """
         with transaction(self._session):
             booking = self._repository.lock_owned(booking_id, user_id)
