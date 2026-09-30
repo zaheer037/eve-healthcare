@@ -1,0 +1,62 @@
+name: eve-healthcare
+
+x-env: &env
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-eve}:${POSTGRES_PASSWORD:-eve-dev-password}@db:5432/${POSTGRES_DB:-eve}
+  JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-change-me-0123456789abcdef}
+  WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-only-webhook-secret-change-me-0123456789}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-dev-only-admin-password}
+  SEED_ON_START: ${SEED_ON_START:-false}  # T2.5 turns this on with the seed script
+
+x-app: &app
+  image: eve-healthcare-api:dev
+  build: .
+  env_file:
+    - path: .env
+      required: false
+  environment: *env
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-eve}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eve-dev-password}
+      POSTGRES_DB: ${POSTGRES_DB:-eve}
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *app
+    command: ["sh", "-c", "alembic upgrade head && if [ \"$$SEED_ON_START\" = true ]; then python -m scripts.seed; fi"]
+    depends_on:
+      db: {condition: service_healthy}
+    restart: "no"
+
+  api:
+    <<: *app
+    ports: ["${API_PORT:-8000}:8000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+
+  test:
+    <<: *app
+    profiles: ["test"]
+    image: eve-healthcare-api:test
+    build:
+      context: .
+      target: test
+    environment:
+      <<: *env
+      TEST_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-eve}:${POSTGRES_PASSWORD:-eve-dev-password}@db:5432/eve_test
+    depends_on:
+      db: {condition: service_healthy}
+    command: ["pytest", "-q"]
+
+volumes:
+  pgdata:

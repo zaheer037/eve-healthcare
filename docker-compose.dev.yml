@@ -1,0 +1,4 @@
+# Publishes the database port for runs on the host. Used by `make db`.
+services:
+  db:
+    ports: ["127.0.0.1:${DB_PORT:-5432}:5432"]

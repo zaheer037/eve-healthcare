@@ -1,0 +1,13 @@
+# Keep the build context small: the project folder also holds the working spec, drafts and
+# virtual environments. The image needs only pyproject.toml, uv.lock, app, scripts, migrations,
+# alembic.ini and tests.
+.git
+.venv*
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.env
+docs
+*.pdf
