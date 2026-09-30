@@ -1,14 +1,16 @@
 """The database engine, the session factory and the session dependency."""
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from typing import Annotated
 
 from fastapi import Depends, Request
 from sqlalchemy import Engine, create_engine
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
+from app.core.errors import AppError
 
 IDLE_IN_TRANSACTION_TIMEOUT_MS = 15_000
 POOL_RECYCLE_SECONDS = 1800
@@ -51,6 +53,24 @@ def violated_constraint(error: DBAPIError) -> str | None:
     """The name of the constraint that a database error names. psycopg puts it in `diag`."""
     name: str | None = getattr(getattr(error.orig, "diag", None), "constraint_name", None)
     return name
+
+
+@contextmanager
+def domain_errors(session: Session, by_constraint: Mapping[str, AppError]) -> Iterator[None]:
+    """Turn a violated constraint into the domain error that names it.
+
+    The rollback comes first, so the session stays usable (spec section 4.2). A constraint that
+    is not in the mapping is a bug or an outage, so it is raised unchanged. Build the errors for
+    each call: an exception carries its traceback, so one instance must not serve two requests.
+    """
+    try:
+        yield
+    except IntegrityError as error:
+        session.rollback()
+        constraint = violated_constraint(error)
+        if constraint is not None and constraint in by_constraint:
+            raise by_constraint[constraint] from error
+        raise
 
 
 def get_session(request: Request) -> Iterator[Session]:

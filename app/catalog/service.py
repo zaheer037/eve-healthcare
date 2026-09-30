@@ -1,16 +1,14 @@
 """Catalog use cases. The service owns the transaction and ends it before it returns."""
 
 import uuid
-from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.catalog.repository import CatalogRepository, CentreFilters, OfferedTest
-from app.core.db import violated_constraint
+from app.core.db import domain_errors
 from app.core.errors import (
     AppError,
     CentreNotFound,
@@ -27,24 +25,8 @@ class CatalogService:
         self._session = session
         self._repository = CatalogRepository(session)
 
-    @contextmanager
-    def _domain_errors(self, by_constraint: Mapping[str, AppError]) -> Iterator[None]:
-        """Turn a violated constraint into the domain error that names it.
-
-        The rollback comes first, so the session stays usable (spec section 4.2). A constraint
-        that is not in the mapping is a bug or an outage, so it is raised unchanged.
-        """
-        try:
-            yield
-        except IntegrityError as error:
-            self._session.rollback()
-            constraint = violated_constraint(error)
-            if constraint is not None and constraint in by_constraint:
-                raise by_constraint[constraint] from error
-            raise
-
     def _commit(self, duplicates: Mapping[str, AppError]) -> None:
-        with self._domain_errors(duplicates):
+        with domain_errors(self._session, duplicates):
             self._session.commit()
 
     # ---------------------------------------------------------------- centres
@@ -106,7 +88,7 @@ class CatalogService:
             "fk_centre_tests_centre_id": CentreNotFound("No centre has this ID."),
             "fk_centre_tests_test_id": DiagnosticTestNotFound("No diagnostic test has this ID."),
         }
-        with self._domain_errors(missing):
+        with domain_errors(self._session, missing):
             offered, created = self._repository.upsert_centre_test(
                 centre_id=centre_id,
                 test_id=test_id,

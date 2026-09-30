@@ -1,0 +1,71 @@
+"""Request and response models of the booking endpoints (spec section 7.6)."""
+
+import uuid
+from datetime import datetime
+from decimal import Decimal
+from typing import Annotated
+
+from pydantic import AfterValidator, AwareDatetime, BaseModel, BeforeValidator, ConfigDict
+from pydantic_core import PydanticCustomError
+
+from app.models.booking import BookingStatus
+
+
+def _text_or_datetime_only(value: object) -> object:
+    """Refuse a number. Pydantic reads `1893456000` as a Unix time, and the API documents only
+    ISO 8601 text."""
+    if not isinstance(value, str | datetime):
+        raise PydanticCustomError(
+            "datetime_type", "Input should be a date-time string with a UTC offset"
+        )
+    return value
+
+
+def _to_the_minute(value: datetime) -> datetime:
+    """Cut off seconds and microseconds, so "10:00:45" and "10:00:00" name one slot."""
+    return value.replace(second=0, microsecond=0)
+
+
+# A naive datetime is refused: a booking needs an instant. The offset is kept as it came, because
+# the window check compares aware datetimes and never converts them (spec sharp edge 50).
+AppointmentAt = Annotated[
+    AwareDatetime, BeforeValidator(_text_or_datetime_only), AfterValidator(_to_the_minute)
+]
+
+
+class BookingCreate(BaseModel):
+    """What a client may choose. The amount, the status and the owner are the server's."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    centre_id: uuid.UUID
+    test_id: uuid.UUID
+    appointment_at: AppointmentAt
+
+
+class CentreRef(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+
+
+class DiagnosticTestRef(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+
+
+class BookingRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    centre: CentreRef
+    test: DiagnosticTestRef
+    appointment_at: datetime
+    amount: Decimal
+    currency: str
+    status: BookingStatus
+    created_at: datetime

@@ -6,10 +6,12 @@ from typing import Any, cast
 
 import pytest
 from fastapi import Request
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.db import connection_options, create_db_engine, get_session
+from app.core.db import connection_options, create_db_engine, domain_errors, get_session
+from app.core.errors import DuplicateCentre, DuplicateDiagnosticTest
 
 
 def test_every_connection_starts_with_the_timeouts_and_utc(settings: Settings) -> None:
@@ -66,3 +68,65 @@ def test_the_session_is_closed_when_the_handler_fails() -> None:
 
 def test_session_type_is_the_orm_session() -> None:
     assert Session.__name__ == "Session"
+
+
+# ==== domain_errors: a violated constraint becomes the domain error that names it
+
+
+class RecordingSession:
+    """Remembers what the helper asked of the session, and in which order."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def rollback(self) -> None:
+        self.calls.append("rollback")
+
+
+def integrity_error(constraint: str | None) -> IntegrityError:
+    diag = SimpleNamespace(constraint_name=constraint)
+    return IntegrityError("INSERT ...", {}, cast(BaseException, SimpleNamespace(diag=diag)))
+
+
+def test_a_named_constraint_becomes_its_domain_error_after_a_rollback() -> None:
+    session = RecordingSession()
+    duplicate = DuplicateCentre("This centre already exists.")
+    original = integrity_error("uq_centres_name_location")
+    mapping = {"uq_centres_name_location": duplicate}
+    with pytest.raises(DuplicateCentre) as raised, domain_errors(cast(Session, session), mapping):
+        raise original
+    assert raised.value is duplicate
+    assert raised.value.__cause__ is original  # the database error stays in the chain
+    assert session.calls == ["rollback"]
+
+
+def test_the_error_is_chosen_by_the_constraint_that_fired() -> None:
+    mapping = {
+        "uq_diagnostic_tests_code": DuplicateDiagnosticTest("code"),
+        "uq_diagnostic_tests_name": DuplicateDiagnosticTest("name"),
+    }
+    session = cast(Session, RecordingSession())
+    with pytest.raises(DuplicateDiagnosticTest, match="name"), domain_errors(session, mapping):
+        raise integrity_error("uq_diagnostic_tests_name")
+
+
+@pytest.mark.parametrize("constraint", ["ck_centres_something", None])
+def test_a_constraint_that_is_not_mapped_is_raised_unchanged_after_a_rollback(
+    constraint: str | None,
+) -> None:
+    session = RecordingSession()
+    original = integrity_error(constraint)
+    mapping = {"uq_other": DuplicateCentre()}
+    with pytest.raises(IntegrityError) as raised, domain_errors(cast(Session, session), mapping):
+        raise original
+    assert raised.value is original
+    assert session.calls == ["rollback"]
+
+
+def test_other_errors_and_a_clean_block_pass_through_without_a_rollback() -> None:
+    session = RecordingSession()
+    with domain_errors(cast(Session, session), {}):
+        pass
+    with pytest.raises(OperationalError), domain_errors(cast(Session, session), {}):
+        raise OperationalError("SELECT 1", {}, cast(BaseException, RuntimeError("down")))
+    assert session.calls == []

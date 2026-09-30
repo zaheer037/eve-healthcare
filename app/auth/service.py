@@ -1,11 +1,10 @@
 """Signup and login: the two use cases that hash or verify a password."""
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.repository import UserRepository
 from app.core.config import Settings
-from app.core.db import violated_constraint
+from app.core.db import domain_errors
 from app.core.errors import EmailAlreadyRegistered, InvalidCredentials
 from app.core.security import create_access_token, hash_password, verify_password
 from app.core.throttle import LoginThrottle
@@ -36,15 +35,11 @@ class AuthService:
             phone=phone,
         )
         self._session.add(user)
-        try:
+        taken = {
+            "uq_users_email": EmailAlreadyRegistered("An account with this email already exists.")
+        }
+        with domain_errors(self._session, taken):
             self._session.commit()  # one INSERT ... RETURNING
-        except IntegrityError as error:
-            self._session.rollback()  # first, so the session stays usable
-            if violated_constraint(error) == "uq_users_email":
-                raise EmailAlreadyRegistered(
-                    "An account with this email already exists."
-                ) from error
-            raise
         return user
 
     def login(self, email: str, password: str) -> tuple[str, int]:
