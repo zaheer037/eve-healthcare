@@ -230,17 +230,33 @@ def _parser() -> argparse.ArgumentParser:
         prog="python -m scripts.simulate_provider",
         description="Send signed webhook events, with duplicates and retries.",
     )
-    parser.add_argument("--payment-id", type=uuid.UUID, required=True)
-    parser.add_argument("--result", choices=("SUCCESS", "FAILED"), default="SUCCESS")
-    parser.add_argument("--url", type=_http_url, default=DEFAULT_URL)
+    parser.add_argument(
+        "--payment-id",
+        type=uuid.UUID,
+        required=True,
+        help="the payment to settle (from POST /payments/)",
+    )
+    parser.add_argument(
+        "--result", choices=("SUCCESS", "FAILED"), default="SUCCESS", help="the status of the event"
+    )
+    parser.add_argument(
+        "--url",
+        type=_http_url,
+        default=DEFAULT_URL,
+        help=f"the full webhook URL, not the base (default: {DEFAULT_URL})",
+    )
     parser.add_argument(
         "--secret", default=None, help="default: WEBHOOK_SECRET from the environment or .env"
     )
     parser.add_argument("--event-id", default=None, help="default: a fresh ID for every run")
     parser.add_argument("--reference", default=None, help="default: sim_<payment id>")
-    parser.add_argument("--amount", default=None)
-    parser.add_argument("--currency", default=None)
-    parser.add_argument("--failure-reason", default=None)
+    parser.add_argument(
+        "--amount", default=None, help="add an amount, for example 380.00 (a wrong one is rejected)"
+    )
+    parser.add_argument("--currency", default=None, help="add a currency, for example INR")
+    parser.add_argument(
+        "--failure-reason", default=None, help="add a reason (the API refuses one on SUCCESS)"
+    )
     parser.add_argument("--repeat", type=_at_least_one, default=1, help="send the event N times")
     parser.add_argument("--concurrent", action="store_true", help="send the copies at once")
     parser.add_argument("--max-attempts", type=_at_least_one, default=DEFAULT_ATTEMPTS)

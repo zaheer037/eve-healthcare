@@ -130,6 +130,9 @@ docker compose exec api python -m scripts.simulate_provider --payment-id $PAYMEN
 curl -s $API/bookings/$BOOKING -H "$AUTH" | jq '{status, amount, payments: [.payments[] | {status}]}'
 ```
 
+The script posts to `http://localhost:8000/payments/webhook/`. Add `--url` with the full webhook
+address when the API listens elsewhere.
+
 Leave out `"simulate"` in step 4 and the payment settles at once as `SUCCESS` (80% of the time) or
 `FAILED`. A `FAILED` payment makes the booking `FAILED`, and you book again.
 
