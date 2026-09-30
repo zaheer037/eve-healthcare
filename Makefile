@@ -2,7 +2,7 @@
 COMPOSE := docker compose -f docker-compose.yml
 COMPOSE_DEV := $(COMPOSE) -f docker-compose.dev.yml
 
-.PHONY: help up db test test-unit test-docker lint fmt typecheck migrate seed check requirements
+.PHONY: help up db test test-unit coverage test-docker lint fmt typecheck migrate seed check requirements
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -18,6 +18,9 @@ test: ## Run the tests on the host (needs `make db`)
 
 test-unit: ## Run the unit tests only (no database needed)
 	uv run pytest -q tests/unit
+
+coverage: ## Tests with the coverage gate that CI uses (85% overall)
+	uv run pytest -q --cov=app --cov-report=term-missing --cov-fail-under=85
 
 test-docker: ## Run the tests in Docker only
 	$(COMPOSE) --profile test run --rm test

@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true  # a newer push makes the older run obsolete
+
+jobs:
+  quality:
+    name: Lint and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy app
+
+  test:
+    name: Tests on PostgreSQL 17
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: eve
+          # An ephemeral container that dies with the job and listens on the runner only.
+          # A repository secret would make the workflow fail on every fork without one.
+          POSTGRES_PASSWORD: ci-only-throwaway-password
+          POSTGRES_DB: eve
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U eve -d eve"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      ENVIRONMENT: test
+      DATABASE_URL: postgresql+psycopg://eve:ci-only-throwaway-password@localhost:5432/eve
+      TEST_DATABASE_URL: postgresql+psycopg://eve:ci-only-throwaway-password@localhost:5432/eve_test
+      JWT_SECRET: ci-only-jwt-secret-0123456789abcdef0123456789
+      WEBHOOK_SECRET: ci-only-webhook-secret-0123456789abcdef01234
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv sync --frozen
+      - name: Migrate an empty database
+        run: uv run alembic upgrade head
+      - name: Check that the models and the migrations agree
+        run: uv run alembic check
+      - name: Tests with the coverage gate
+        run: make coverage
+      - name: Concurrency tests, 20 runs in a row
+        run: |
+          for run in $(seq 1 20); do
+            uv run pytest -m concurrency -q -p no:cacheprovider || exit 1
+          done
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv sync --frozen
+      - run: uv run pip-audit
+
+  docker:
+    name: Docker from a clean checkout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start the stack (there is no .env file)
+        run: docker compose up --build --wait
+      - name: Readiness probe
+        run: curl --fail --silent --show-error http://localhost:8000/health/ready
+      - name: Run the tests in Docker
+        run: docker compose --profile test run --rm test
+      - name: Stop the stack and remove its volume
+        if: always()
+        run: docker compose -p eve-healthcare -f docker-compose.yml --profile test down -v --remove-orphans
