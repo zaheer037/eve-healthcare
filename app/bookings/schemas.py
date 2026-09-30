@@ -37,7 +37,18 @@ AppointmentAt = Annotated[
 class BookingCreate(BaseModel):
     """What a client may choose. The amount, the status and the owner are the server's."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "centre_id": "5fc13147-109b-4782-9795-1156861d2dd3",
+                    "test_id": "d30e9668-8d50-4240-9f83-18312d8e3b25",
+                    "appointment_at": "2030-05-01T10:30:00+05:30",
+                }
+            ]
+        },
+    )
 
     centre_id: uuid.UUID
     test_id: uuid.UUID

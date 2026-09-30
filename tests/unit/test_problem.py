@@ -13,7 +13,7 @@ from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core import errors
-from app.core.problem import install_exception_handlers
+from app.core.problem import add_problem_schemas, install_exception_handlers, problems
 
 REQUEST_ID = "req-test-0001"
 
@@ -235,3 +235,43 @@ def test_the_500_sets_its_own_request_id_and_cache_headers(client: TestClient) -
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["pragma"] == "no-cache"
     assert response.json()["request_id"] == REQUEST_ID
+
+
+# ==== problems(): the `responses=` of a route
+
+
+def test_problems_groups_codes_by_status_and_names_them() -> None:
+    documented = problems(
+        errors.NotAuthenticated,
+        errors.InvalidToken,
+        errors.Forbidden,
+        errors.BookingNotFound,
+        errors.DuplicateBooking,
+        errors.BookingLimitReached,
+    )
+    assert sorted(documented) == [401, 403, 404, 409]
+    assert documented[401]["description"] == "One of `NOT_AUTHENTICATED`, `INVALID_TOKEN`."
+    assert documented[403]["description"] == "`FORBIDDEN`."
+    assert documented[409]["description"] == "One of `DUPLICATE_BOOKING`, `BOOKING_LIMIT_REACHED`."
+
+
+def test_every_problem_response_is_problem_json_with_the_problem_model() -> None:
+    for entry in problems(errors.BookingNotFound, errors.PayloadTooLarge).values():
+        assert entry["content"] == {
+            "application/problem+json": {"schema": {"$ref": "#/components/schemas/ProblemDetail"}}
+        }
+
+
+def test_problems_of_nothing_is_nothing() -> None:
+    assert problems() == {}
+
+
+def test_the_problem_model_and_the_models_under_it_are_added_to_a_document() -> None:
+    document: dict[str, object] = {"openapi": "3.1.0"}
+    add_problem_schemas(document)
+    schemas = document["components"]["schemas"]  # type: ignore[index]
+    assert {"ProblemDetail", "ErrorCode", "FieldError"} <= set(schemas)
+    assert "$defs" not in schemas["ProblemDetail"]
+    assert schemas["ProblemDetail"]["properties"]["code"] == {
+        "$ref": "#/components/schemas/ErrorCode"
+    }

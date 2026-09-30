@@ -19,14 +19,14 @@ class HealthRead(BaseModel):
 
 
 @router.get("/live", summary="The process is up")
-async def live() -> HealthRead:
+async def health_live() -> HealthRead:
     # async def on purpose: no thread is needed, so the probe still answers when every
     # thread of the pool is busy. Blocking work never belongs in this handler.
     return HealthRead(status="ok")
 
 
 @router.get("/ready", summary="The database answers")
-def ready(session: SessionDep) -> HealthRead:
+def health_ready(session: SessionDep) -> HealthRead:
     try:
         session.execute(text("SELECT 1"))
     except (OperationalError, InterfaceError, PoolTimeoutError) as error:

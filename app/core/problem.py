@@ -1,7 +1,7 @@
 """RFC 9457 problem responses: one format for every error (spec section 7.3)."""
 
 from http import HTTPStatus
-from typing import cast
+from typing import Any, cast
 
 import structlog
 from fastapi import FastAPI, Request
@@ -15,7 +15,7 @@ from starlette.routing import Match
 from starlette.types import Scope
 
 from app.core import errors
-from app.core.errors import AppError, ErrorCode
+from app.core.errors import ERROR_SPECS, AppError, ErrorCode
 from app.core.http import NO_STORE_HEADERS
 
 log = structlog.get_logger()
@@ -41,6 +41,45 @@ class ProblemDetail(BaseModel):
     code: ErrorCode
     request_id: str | None = None
     errors: list[FieldError] | None = None
+
+
+def describe(codes: list[ErrorCode]) -> str:
+    """ "`FORBIDDEN`." for one code and "One of `A`, `B`." for several."""
+    listed = ", ".join(f"`{code}`" for code in codes)
+    return f"{listed}." if len(codes) == 1 else f"One of {listed}."
+
+
+def problems(*errors: type[AppError]) -> dict[int | str, dict[str, Any]]:
+    """The `responses=` of a route for the errors that it can answer, one entry per status.
+
+    Each description names the codes that cause the status, so `/docs` tells a client what to
+    switch on. The body is the problem model and the media type is `application/problem+json`. The
+    model itself is added to the document by `add_problem_schemas`.
+    """
+    codes_by_status: dict[int, list[ErrorCode]] = {}
+    for error in errors:
+        codes_by_status.setdefault(ERROR_SPECS[error.code].status, []).append(error.code)
+    return {
+        status: {
+            "description": describe(codes),
+            "content": {
+                PROBLEM_MEDIA_TYPE: {"schema": {"$ref": "#/components/schemas/ProblemDetail"}}
+            },
+        }
+        for status, codes in codes_by_status.items()
+    }
+
+
+def add_problem_schemas(schema: dict[str, Any]) -> None:
+    """Register `ProblemDetail` and the models under it in an OpenAPI document.
+
+    A response that names its media type by hand, as `problems()` does, does not register the
+    model, and FastAPI would only offer `application/json` for a `model=` entry.
+    """
+    models = ProblemDetail.model_json_schema(ref_template="#/components/schemas/{model}")
+    definitions = models.pop("$defs", {})
+    schemas = schema.setdefault("components", {}).setdefault("schemas", {})
+    schemas.update({"ProblemDetail": models, **definitions})
 
 
 def request_id_of(scope: Scope) -> str | None:

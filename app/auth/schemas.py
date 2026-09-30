@@ -57,9 +57,20 @@ LoginEmail = Annotated[
 
 
 class SignupRequest(BaseModel):
+    # A `role` field is a 422, so nobody signs up as admin.
     model_config = ConfigDict(
-        extra="forbid"
-    )  # a `role` field is a 422, so nobody signs up as admin
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "email": "jane@example.in",
+                    "password": "a long password of 15 or more characters",
+                    "full_name": "Jane Doe",
+                    "phone": "+919812345678",
+                }
+            ]
+        },
+    )
 
     email: SignupEmail
     password: Password
@@ -68,7 +79,14 @@ class SignupRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {"email": "jane@example.in", "password": "a long password of 15 or more characters"}
+            ]
+        },
+    )
 
     email: LoginEmail
     password: Password

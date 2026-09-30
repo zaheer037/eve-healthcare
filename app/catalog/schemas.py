@@ -20,7 +20,14 @@ TestDescription = Annotated[SafeParagraph, Field(max_length=1000)]
 
 
 class CentreCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {"name": "Sunrise Diagnostics", "location": "12 MG Road", "city": "Bengaluru"}
+            ]
+        },
+    )
 
     name: CentreName
     location: CentreLocation
@@ -28,6 +35,10 @@ class CentreCreate(BaseModel):
 
 
 class CentreUpdate(PatchModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"name": "Sunrise Diagnostics East"}, {"is_active": True}]},
+    )
     nullable: ClassVar[frozenset[str]] = frozenset({"city"})
 
     name: CentreName | None = None
@@ -70,7 +81,12 @@ class CentreDetailRead(CentreRead):
 class CentreTestWrite(BaseModel):
     """The body of the price upsert: a full value, so the same body always gives the same state."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [{"price": "499.00", "currency": "INR", "is_available": True}]
+        },
+    )
 
     price: Money
     currency: CurrencyCode = "INR"
@@ -81,7 +97,18 @@ class CentreTestWrite(BaseModel):
 
 
 class DiagnosticTestCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "code": "CBC",
+                    "name": "Complete Blood Count",
+                    "description": "Counts red cells, white cells and platelets.",
+                }
+            ]
+        },
+    )
 
     code: TestCode
     name: TestName
@@ -89,6 +116,10 @@ class DiagnosticTestCreate(BaseModel):
 
 
 class DiagnosticTestUpdate(PatchModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"name": "Full Blood Count"}, {"description": None}]},
+    )
     nullable: ClassVar[frozenset[str]] = frozenset({"description"})
 
     code: TestCode | None = None

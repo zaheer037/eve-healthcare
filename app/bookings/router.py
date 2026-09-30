@@ -9,11 +9,28 @@ from app.auth.dependencies import CurrentUser
 from app.bookings.schemas import BookingCreate, BookingDetailRead, BookingRead
 from app.bookings.service import BookingService
 from app.core.db import SessionDep
+from app.core.errors import (
+    AppointmentOutOfWindow,
+    BookingLimitReached,
+    BookingNotFound,
+    CentreTestNotFound,
+    DuplicateBooking,
+    Forbidden,
+    InvalidBookingStatus,
+    InvalidToken,
+    NotAuthenticated,
+    PaymentInProgress,
+    ValidationFailed,
+)
 from app.core.http import located
 from app.core.pagination import Page, PageParamsDep
+from app.core.problem import problems
 from app.core.routing import TolerantRouter
 
 router = TolerantRouter(prefix="/bookings", tags=["bookings"])
+
+
+SIGNED_IN = (NotAuthenticated, InvalidToken)  # every booking endpoint needs a token
 
 
 def get_booking_service(request: Request, session: SessionDep) -> BookingService:
@@ -23,7 +40,19 @@ def get_booking_service(request: Request, session: SessionDep) -> BookingService
 BookingServiceDep = Annotated[BookingService, Depends(get_booking_service)]
 
 
-@router.post("/", status_code=201, summary="Book a test at a centre")
+@router.post(
+    "/",
+    status_code=201,
+    summary="Book a test at a centre",
+    responses=problems(
+        *SIGNED_IN,
+        CentreTestNotFound,
+        AppointmentOutOfWindow,
+        ValidationFailed,
+        BookingLimitReached,
+        DuplicateBooking,
+    ),
+)
 def create_booking(
     data: BookingCreate,
     user: CurrentUser,
@@ -42,7 +71,11 @@ def create_booking(
     return BookingRead.model_validate(booking)
 
 
-@router.get("/", summary="List my bookings, newest first")
+@router.get(
+    "/",
+    summary="List my bookings, newest first",
+    responses=problems(*SIGNED_IN, ValidationFailed),
+)
 def list_bookings(
     user: CurrentUser, service: BookingServiceDep, page: PageParamsDep
 ) -> Page[BookingRead]:
@@ -53,7 +86,11 @@ def list_bookings(
     )
 
 
-@router.get("/{booking_id}", summary="One of my bookings, with its payments")
+@router.get(
+    "/{booking_id}",
+    summary="One of my bookings, with its payments",
+    responses=problems(*SIGNED_IN, Forbidden, BookingNotFound, ValidationFailed),
+)
 def get_booking(
     booking_id: uuid.UUID, user: CurrentUser, service: BookingServiceDep
 ) -> BookingDetailRead:
@@ -61,7 +98,18 @@ def get_booking(
     return BookingDetailRead.model_validate(service.get_owned(user.id, booking_id))
 
 
-@router.post("/{booking_id}/cancel", summary="Cancel one of my bookings")
+@router.post(
+    "/{booking_id}/cancel",
+    summary="Cancel one of my bookings",
+    responses=problems(
+        *SIGNED_IN,
+        Forbidden,
+        BookingNotFound,
+        InvalidBookingStatus,
+        PaymentInProgress,
+        ValidationFailed,
+    ),
+)
 def cancel_booking(
     booking_id: uuid.UUID, user: CurrentUser, service: BookingServiceDep
 ) -> BookingRead:

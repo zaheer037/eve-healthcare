@@ -8,7 +8,20 @@ from fastapi import Depends, Request, Response
 
 from app.auth.dependencies import CurrentUser
 from app.core.db import SessionDep
+from app.core.errors import (
+    BookingNotFound,
+    BookingNotPayable,
+    Forbidden,
+    InvalidToken,
+    NotAuthenticated,
+    PayloadTooLarge,
+    PaymentNotFound,
+    SimulationNotAllowed,
+    ValidationFailed,
+    WebhookSignatureInvalid,
+)
 from app.core.http import located
+from app.core.problem import problems
 from app.core.routing import TolerantRouter
 from app.models.payment import PaymentStatus
 from app.payments.dependencies import verified_webhook_payload
@@ -23,6 +36,9 @@ from app.payments.service import PaymentService, PaymentView, PayOutcome
 from app.payments.simulator import PaymentSimulator
 
 router = TolerantRouter(prefix="/payments", tags=["payments"])
+
+
+SIGNED_IN = (NotAuthenticated, InvalidToken)
 
 
 def get_payment_service(request: Request, session: SessionDep) -> PaymentService:
@@ -59,6 +75,14 @@ def pay_status(outcome: PayOutcome) -> HTTPStatus:
     status_code=201,
     summary="Pay a booking",
     responses={
+        **problems(
+            *SIGNED_IN,
+            Forbidden,
+            BookingNotFound,
+            BookingNotPayable,
+            SimulationNotAllowed,
+            ValidationFailed,
+        ),
         200: {"model": PaymentRead, "description": "A repeat: the payment that already succeeded."},
         202: {"model": PaymentRead, "description": "The payment is pending: a webhook settles it."},
     },
@@ -78,7 +102,11 @@ def create_payment(
     return payment_read(outcome.view)
 
 
-@router.get("/{payment_id}", summary="One of my payments")
+@router.get(
+    "/{payment_id}",
+    summary="One of my payments",
+    responses=problems(*SIGNED_IN, Forbidden, PaymentNotFound, ValidationFailed),
+)
 def get_payment(
     payment_id: uuid.UUID, user: CurrentUser, service: PaymentServiceDep
 ) -> PaymentRead:
@@ -121,7 +149,10 @@ WEBHOOK_DOCS = {
 
 
 @router.post(
-    "/webhook/", summary="Receive a payment event from the provider", openapi_extra=WEBHOOK_DOCS
+    "/webhook/",
+    summary="Receive a payment event from the provider",
+    openapi_extra=WEBHOOK_DOCS,
+    responses=problems(WebhookSignatureInvalid, PayloadTooLarge, ValidationFailed),
 )
 def receive_webhook(
     payload: Annotated[WebhookPayload, Depends(verified_webhook_payload)],

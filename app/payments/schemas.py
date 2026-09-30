@@ -19,7 +19,15 @@ FailureReason = Annotated[SafeText, Field(max_length=200)]
 class PaymentCreate(BaseModel):
     """Pay a booking. The amount always comes from the booking, so a client never sends one."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {"booking_id": "7c1f0c1e-2a4b-4b58-9d6e-3f1a2b4c5d6e"},
+                {"booking_id": "7c1f0c1e-2a4b-4b58-9d6e-3f1a2b4c5d6e", "simulate": "PENDING"},
+            ]
+        },
+    )
 
     booking_id: uuid.UUID
     simulate: PaymentStatus | None = Field(

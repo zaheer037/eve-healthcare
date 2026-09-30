@@ -25,8 +25,19 @@ from app.catalog.schemas import (
 )
 from app.catalog.service import CatalogService
 from app.core.db import SessionDep
+from app.core.errors import (
+    CentreNotFound,
+    DiagnosticTestNotFound,
+    DuplicateCentre,
+    DuplicateDiagnosticTest,
+    Forbidden,
+    InvalidToken,
+    NotAuthenticated,
+    ValidationFailed,
+)
 from app.core.http import located
 from app.core.pagination import Page, PageParamsDep
+from app.core.problem import problems
 from app.core.routing import TolerantRouter
 from app.core.schemas import SafeText
 from app.models.catalog import Centre, DiagnosticTest
@@ -37,6 +48,10 @@ centres_admin = TolerantRouter(
 )
 tests_public = TolerantRouter(prefix="/tests", tags=["tests"])
 tests_admin = TolerantRouter(prefix="/tests", tags=["tests"], dependencies=[Depends(require_admin)])
+
+
+# Who can write: a missing or bad token, or a signed-in user who is not an admin.
+ADMIN_ONLY = (NotAuthenticated, InvalidToken, Forbidden)
 
 
 def get_catalog_service(session: SessionDep) -> CatalogService:
@@ -68,7 +83,7 @@ def diagnostic_test_read(test: DiagnosticTest) -> DiagnosticTestRead:
 # ================================================================ centres (public)
 
 
-@centres_public.get("/", summary="List the active centres")
+@centres_public.get("/", summary="List the active centres", responses=problems(ValidationFailed))
 def list_centres(
     service: CatalogServiceDep,
     page: PageParamsDep,
@@ -84,7 +99,11 @@ def list_centres(
     )
 
 
-@centres_public.get("/{centre_id}", summary="One centre with the tests it offers")
+@centres_public.get(
+    "/{centre_id}",
+    summary="One centre with the tests it offers",
+    responses=problems(CentreNotFound, ValidationFailed),
+)
 def get_centre(centre_id: uuid.UUID, service: CatalogServiceDep) -> CentreDetailRead:
     centre, offered = service.get_centre(centre_id)
     return centre_detail(centre, offered)
@@ -93,7 +112,12 @@ def get_centre(centre_id: uuid.UUID, service: CatalogServiceDep) -> CentreDetail
 # ================================================================ centres (admin)
 
 
-@centres_admin.post("/", status_code=201, summary="Create a centre")
+@centres_admin.post(
+    "/",
+    status_code=201,
+    summary="Create a centre",
+    responses=problems(*ADMIN_ONLY, DuplicateCentre, ValidationFailed),
+)
 def create_centre(
     data: CentreCreate, service: CatalogServiceDep, request: Request, response: Response
 ) -> CentreRead:
@@ -102,14 +126,23 @@ def create_centre(
     return centre_read(centre)
 
 
-@centres_admin.patch("/{centre_id}", summary="Change some fields of a centre, or restore it")
+@centres_admin.patch(
+    "/{centre_id}",
+    summary="Change some fields of a centre, or restore it",
+    responses=problems(*ADMIN_ONLY, CentreNotFound, DuplicateCentre, ValidationFailed),
+)
 def update_centre(
     centre_id: uuid.UUID, data: CentreUpdate, service: CatalogServiceDep
 ) -> CentreRead:
     return centre_read(service.update_centre(centre_id, data.changes()))
 
 
-@centres_admin.delete("/{centre_id}", status_code=204, summary="Deactivate a centre")
+@centres_admin.delete(
+    "/{centre_id}",
+    status_code=204,
+    summary="Deactivate a centre",
+    responses=problems(*ADMIN_ONLY, CentreNotFound, ValidationFailed),
+)
 def deactivate_centre(centre_id: uuid.UUID, service: CatalogServiceDep) -> None:
     """A centre is never deleted, because bookings refer to it. A repeated call is not an error."""
     service.deactivate_centre(centre_id)
@@ -118,7 +151,10 @@ def deactivate_centre(centre_id: uuid.UUID, service: CatalogServiceDep) -> None:
 @centres_admin.put(
     "/{centre_id}/tests/{test_id}",
     summary="Set the price of a test at a centre",
-    responses={201: {"model": CentreTestRead, "description": "The centre did not offer it yet."}},
+    responses={
+        **problems(*ADMIN_ONLY, CentreNotFound, DiagnosticTestNotFound, ValidationFailed),
+        201: {"model": CentreTestRead, "description": "The centre did not offer it yet."},
+    },
 )
 def set_centre_test(
     centre_id: uuid.UUID,
@@ -144,7 +180,9 @@ def set_centre_test(
 # ================================================================ diagnostic tests (public)
 
 
-@tests_public.get("/", summary="List the active diagnostic tests")
+@tests_public.get(
+    "/", summary="List the active diagnostic tests", responses=problems(ValidationFailed)
+)
 def list_tests(
     service: CatalogServiceDep, page: PageParamsDep, q: SearchQuery | None = None
 ) -> Page[DiagnosticTestRead]:
@@ -156,7 +194,11 @@ def list_tests(
     )
 
 
-@tests_public.get("/{test_id}", summary="One diagnostic test")
+@tests_public.get(
+    "/{test_id}",
+    summary="One diagnostic test",
+    responses=problems(DiagnosticTestNotFound, ValidationFailed),
+)
 def get_test(test_id: uuid.UUID, service: CatalogServiceDep) -> DiagnosticTestRead:
     return diagnostic_test_read(service.get_test(test_id))
 
@@ -164,7 +206,12 @@ def get_test(test_id: uuid.UUID, service: CatalogServiceDep) -> DiagnosticTestRe
 # ================================================================ diagnostic tests (admin)
 
 
-@tests_admin.post("/", status_code=201, summary="Create a diagnostic test")
+@tests_admin.post(
+    "/",
+    status_code=201,
+    summary="Create a diagnostic test",
+    responses=problems(*ADMIN_ONLY, DuplicateDiagnosticTest, ValidationFailed),
+)
 def create_test(
     data: DiagnosticTestCreate, service: CatalogServiceDep, request: Request, response: Response
 ) -> DiagnosticTestRead:
@@ -173,13 +220,24 @@ def create_test(
     return diagnostic_test_read(test)
 
 
-@tests_admin.patch("/{test_id}", summary="Change some fields of a test, or restore it")
+@tests_admin.patch(
+    "/{test_id}",
+    summary="Change some fields of a test, or restore it",
+    responses=problems(
+        *ADMIN_ONLY, DiagnosticTestNotFound, DuplicateDiagnosticTest, ValidationFailed
+    ),
+)
 def update_test(
     test_id: uuid.UUID, data: DiagnosticTestUpdate, service: CatalogServiceDep
 ) -> DiagnosticTestRead:
     return diagnostic_test_read(service.update_test(test_id, data.changes()))
 
 
-@tests_admin.delete("/{test_id}", status_code=204, summary="Deactivate a diagnostic test")
+@tests_admin.delete(
+    "/{test_id}",
+    status_code=204,
+    summary="Deactivate a diagnostic test",
+    responses=problems(*ADMIN_ONLY, DiagnosticTestNotFound, ValidationFailed),
+)
 def deactivate_test(test_id: uuid.UUID, service: CatalogServiceDep) -> None:
     service.deactivate_test(test_id)
