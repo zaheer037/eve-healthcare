@@ -1,5 +1,6 @@
 """RFC 9457 problem responses: one format for every error (spec section 7.3)."""
 
+from http import HTTPStatus
 from typing import cast
 
 import structlog
@@ -92,9 +93,9 @@ async def handle_app_error(request: Request, exc: Exception) -> JSONResponse:
 
 
 _HTTP_STATUS_ERRORS: dict[int, type[AppError]] = {
-    400: errors.BadRequest,
-    404: errors.RouteNotFound,
-    405: errors.MethodNotAllowed,
+    HTTPStatus.BAD_REQUEST: errors.BadRequest,
+    HTTPStatus.NOT_FOUND: errors.RouteNotFound,
+    HTTPStatus.METHOD_NOT_ALLOWED: errors.MethodNotAllowed,
 }
 
 
@@ -104,8 +105,14 @@ async def handle_http_exception(request: Request, exc: Exception) -> JSONRespons
     error_class = _HTTP_STATUS_ERRORS.get(status)
     if error_class is None:  # defensive: the application never raises another status on purpose
         log.warning("http_exception_unmapped", status=status)
-        error_class = errors.InternalError if status >= 500 else errors.BadRequest
-    headers = {"Allow": allowed_methods(request)} if status == 405 else None
+        error_class = (
+            errors.InternalError
+            if status >= HTTPStatus.INTERNAL_SERVER_ERROR
+            else errors.BadRequest
+        )
+    headers = (
+        {"Allow": allowed_methods(request)} if status == HTTPStatus.METHOD_NOT_ALLOWED else None
+    )
     return problem_response(error_class(), request.scope, headers=headers)
 
 

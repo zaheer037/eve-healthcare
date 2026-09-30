@@ -51,18 +51,22 @@ select = [
   "E", "W",  # pycodestyle
   "F",       # pyflakes
   "I",       # isort
-  "B",       # bugbear
-  "UP",      # pyupgrade
   "N",       # pep8-naming
-  "S",       # bandit
+  "UP",      # pyupgrade
+  "B",       # bugbear
+  "A",       # shadowed builtins
   "C4",      # comprehensions
-  "DTZ",     # naive datetimes
-  "PT",      # pytest style
-  "RET",     # returns
-  "RUF",
+  "C90",     # complexity (the default limit is 10)
   "SIM",
-  "T20",     # print
+  "PL",      # pylint
+  "RUF",
+  "S",       # bandit
+  "PT",      # pytest style
   "TID",     # tidy imports (the layer bans below)
+  "DTZ",     # naive datetimes
+  "T20",     # print
+  "PERF",
+  "FAST",    # FastAPI
 ]
 # Domain errors are named after the catalogue (BookingNotFound), not with an "Error" suffix.
 ignore = ["N818"]
@@ -78,7 +82,7 @@ ignore = ["N818"]
 "app/*/router.py" = ["TID251"]
 "app/*/dependencies.py" = ["TID251"]
 "app/*/schemas.py" = ["TID251"]
-"tests/**" = ["TID251", "S101", "S105", "S106", "S311"]
+"tests/**" = ["TID251", "S101", "S105", "S106", "S311", "PLR2004"]
 "scripts/**" = ["T201"]
 "migrations/**" = ["E501"]
 

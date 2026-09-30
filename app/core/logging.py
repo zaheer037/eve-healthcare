@@ -22,6 +22,7 @@ from structlog.typing import EventDict, WrappedLogger
 from app.core.config import Settings
 
 SENSITIVE_KEY = re.compile(r"password|token|secret|authorization|signature", re.IGNORECASE)
+EXC_INFO_LENGTH = 3  # the tuple from sys.exc_info(): type, value, traceback
 
 
 def redact_secrets(_logger: WrappedLogger, _method: str, event_dict: EventDict) -> EventDict:
@@ -45,7 +46,7 @@ def _exception_of(exc_info: object) -> BaseException | None:
     """The exception behind structlog's `exc_info`: True, an exception or an exc_info tuple."""
     if exc_info is True:
         return sys.exc_info()[1]
-    if isinstance(exc_info, tuple) and len(exc_info) == 3:
+    if isinstance(exc_info, tuple) and len(exc_info) == EXC_INFO_LENGTH:
         exc_info = exc_info[1]
     return exc_info if isinstance(exc_info, BaseException) else None
 
