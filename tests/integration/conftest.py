@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Engine, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import Session
+from structlog.contextvars import merge_contextvars
 from structlog.testing import capture_logs
 
 from app.core.config import Settings
@@ -125,7 +126,7 @@ def query_counter(app: FastAPI, client: TestClient) -> QueryCounter:
 def logs(client: TestClient) -> Iterator[list[dict[str, Any]]]:
     """The structlog events of a test. It starts after the client, because the lifespan
     reconfigures logging."""
-    with capture_logs() as captured:
+    with capture_logs(processors=[merge_contextvars]) as captured:  # `request_id` is bound there
         yield captured
 
 

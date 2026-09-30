@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime, timedelta
 
+import structlog
 from sqlalchemy.orm import Session
 
 from app.bookings.policy import check_active_cap, check_appointment_window, owner_error
@@ -19,6 +20,8 @@ from app.core.errors import (
 )
 from app.core.pagination import PageParams
 from app.models.booking import Booking, BookingStatus
+
+log = structlog.get_logger()
 
 
 class BookingService:
@@ -72,6 +75,13 @@ class BookingService:
         taken = {"uq_bookings_active_slot": DuplicateBooking("You already booked this slot.")}
         with domain_errors(self._session, taken):
             self._session.commit()  # one INSERT ... RETURNING
+        log.info(  # after the commit, so a rolled-back attempt never logs
+            "booking.created",
+            booking_id=str(booking.id),
+            user_id=str(user_id),
+            centre_id=str(centre_id),
+            test_id=str(test_id),
+        )
         return booking
 
     def list_for_user(self, user_id: uuid.UUID, page: PageParams) -> tuple[list[Booking], int]:
@@ -115,6 +125,7 @@ class BookingService:
 
         Commits: yes.
         """
+        changed_from: BookingStatus | None = None
         with transaction(self._session):
             booking = self._repository.lock_owned(booking_id, user_id)
             if booking is None:
@@ -123,9 +134,19 @@ class BookingService:
                     not_found=BookingNotFound("No booking has this ID."),
                 )
             if booking.status is not BookingStatus.CANCELLED:
+                changed_from = booking.status
                 transition(booking.status, BookingStatus.CANCELLED)  # a FAILED booking stops here
                 if self._repository.has_pending_payment(booking.id):
                     raise PaymentInProgress("A payment for this booking is still pending.")
                 booking.status = BookingStatus.CANCELLED
             self._repository.attach_names(booking)
+        if changed_from is not None:  # a repeated cancel changed nothing, so it logs nothing
+            log.info(
+                "booking.status_changed",
+                booking_id=str(booking.id),
+                user_id=str(user_id),
+                from_status=changed_from.value,
+                to_status=BookingStatus.CANCELLED.value,
+                cause="cancel",
+            )
         return booking

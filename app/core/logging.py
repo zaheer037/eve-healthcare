@@ -98,6 +98,7 @@ def protect_uvicorn_loggers() -> None:
 
 def configure_logging(settings: Settings) -> None:
     processors: list[Any] = [
+        structlog.contextvars.merge_contextvars,  # the request ID of a business event
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         redact_secrets,

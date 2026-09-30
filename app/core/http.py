@@ -8,11 +8,13 @@ contextvar that a middleware binds is cleared before the catch-all 500 handler r
 import re
 import time
 import uuid
+from collections.abc import AsyncIterator
 
 import structlog
 from fastapi import Request, Response
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from structlog.contextvars import bind_contextvars, unbind_contextvars
 
 NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9-]{8,64}")
@@ -24,6 +26,23 @@ def located(request: Request, response: Response, route_name: str, **path_params
     """Set `Location` to a path. `url_path_for` returns no host, so a hostile Host header cannot
     reach it, and a later `/v1` prefix needs no change here (sharp edge 47)."""
     response.headers["Location"] = str(request.app.url_path_for(route_name, **path_params))
+
+
+async def bind_request_id(request: Request) -> AsyncIterator[None]:
+    """Bind the request ID into the log context for the length of the handler.
+
+    A business event that a service logs inside a pool thread then carries the ID. An async
+    dependency runs on the event loop in the context of this request, and the thread of a sync
+    handler starts from a copy of that context. Sharp edge 48 warns about two other places: a
+    contextvar that a middleware binds is gone before the catch-all 500 handler runs, and one that
+    a sync dependency binds stays in its own thread. The middleware and the 500 handler therefore
+    still read `scope["state"]`.
+    """
+    bind_contextvars(request_id=request.scope.get("state", {}).get("request_id"))
+    try:
+        yield
+    finally:
+        unbind_contextvars("request_id")
 
 
 class RequestIdMiddleware:

@@ -334,7 +334,8 @@ def test_processed_and_duplicate_events_are_logged_at_info_and_warning(
     with capture_logs() as logs:
         service.handle_webhook(incoming)
         service.handle_webhook(incoming)
-    processed_line, duplicate_line = logs
+    deliveries = [line for line in logs if line["event"].startswith("webhook.")]
+    processed_line, duplicate_line = deliveries  # the settlement has its own events
     assert (processed_line["event"], processed_line["log_level"]) == ("webhook.processed", "info")
     assert processed_line["outcome"] == "APPLIED"
     assert (duplicate_line["event"], duplicate_line["log_level"]) == (

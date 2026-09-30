@@ -44,6 +44,23 @@ class PayOutcome:
     created: bool
 
 
+@dataclass(frozen=True, slots=True)
+class Settled:
+    """A payment that left `PENDING` in this call, and what happened to its booking."""
+
+    payment: Payment
+    booking_before: BookingStatus
+    booking_after: BookingStatus
+
+
+@dataclass(frozen=True, slots=True)
+class Received:
+    """The answer to a delivery, and the settlement that it caused, if it caused one."""
+
+    ack: WebhookAck
+    settled: Settled | None = None
+
+
 class PaymentService:
     def __init__(
         self,
@@ -108,10 +125,13 @@ class PaymentService:
                 currency=booking.currency,
                 status=PaymentStatus.PENDING,
             )
+            booking_before = booking.status
             result = self._simulator.charge(payment.id, simulate)
             if result is not None:  # `None` is pending mode: the webhook settles it later
                 settle(booking, payment, result, now=now)
             self._payments.add(payment)
+        if result is not None:  # a pending payment is not settled yet, so it logs nothing
+            self._log_settled(Settled(payment, booking_before, booking.status), source="api")
         return PayOutcome(PaymentView(payment, booking.status), created=True)
 
     def get_owned(self, user_id: uuid.UUID, payment_id: uuid.UUID) -> PaymentView:
@@ -152,26 +172,35 @@ class PaymentService:
 
         Commits: yes.
         """
-        ack = retry_transient(
+        received = retry_transient(
             lambda: self._receive(payload), retry_on_constraints=RETRIED_CONSTRAINTS
         )
-        self._log(payload, ack)  # after the commit, so a rolled-back attempt never logs
-        return ack
+        self._log_delivery(payload, received.ack)  # after the commit, so a rolled-back attempt
+        if received.settled is not None:  # never logs
+            self._log_settled(received.settled, source="webhook")
+        return received.ack
 
-    def _receive(self, payload: WebhookPayload) -> WebhookAck:
+    def _receive(self, payload: WebhookPayload) -> Received:
         """One attempt: the whole transaction."""
         with transaction(self._session):
             event_id = self._inbox.record(PROVIDER, payload)
             if event_id is None:
-                return WebhookAck(status="duplicate")
+                return Received(WebhookAck(status="duplicate"))
             booking_id = self._payments.booking_id_of(payload.payment_id)
             if booking_id is None:
                 rejected = Settlement(WebhookOutcome.REJECTED, "unknown_payment")
-                return self._finish(event_id, rejected, payment_id=None)
+                return Received(self._finish(event_id, rejected, payment_id=None))
             booking = self._bookings.lock(booking_id)
             payment = self._payments.lock(payload.payment_id)
+            payment_before, booking_before = payment.status, booking.status
             settlement = self._judge(booking, payment, payload)
-            return self._finish(event_id, settlement, payment_id=payment.id)
+            ack = self._finish(event_id, settlement, payment_id=payment.id)
+            settled = (
+                Settled(payment, booking_before, booking.status)
+                if payment_before is PaymentStatus.PENDING and payment.status is not payment_before
+                else None
+            )
+            return Received(ack, settled)
 
     def _judge(self, booking: Booking, payment: Payment, payload: WebhookPayload) -> Settlement:
         """Reject an event that does not describe this payment. Otherwise settle it."""
@@ -206,7 +235,29 @@ class PaymentService:
         return WebhookAck(status="processed", outcome=settlement.outcome, detail=settlement.detail)
 
     @staticmethod
-    def _log(payload: WebhookPayload, ack: WebhookAck) -> None:
+    def _log_settled(settled: Settled, *, source: str) -> None:
+        """A payment left `PENDING` (spec section 10.2, question Q2). `source` is `api` or
+        `webhook`. The booking event follows when the booking moved too."""
+        payment = settled.payment
+        log.info(
+            "payment.settled",
+            payment_id=str(payment.id),
+            booking_id=str(payment.booking_id),
+            status=payment.status.value,
+            failure_reason=payment.failure_reason,
+            source=source,
+        )
+        if settled.booking_after is not settled.booking_before:
+            log.info(
+                "booking.status_changed",
+                booking_id=str(payment.booking_id),
+                from_status=settled.booking_before.value,
+                to_status=settled.booking_after.value,
+                cause="payment" if source == "api" else "webhook",
+            )
+
+    @staticmethod
+    def _log_delivery(payload: WebhookPayload, ack: WebhookAck) -> None:
         """One event per delivery (spec section 10.2). Ids only: the body of an event, with its
         amount and references, never goes to the log."""
         ids = {"event_id": payload.event_id, "payment_id": str(payload.payment_id)}

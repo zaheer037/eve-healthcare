@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from importlib import metadata
 
 import structlog
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
 from app.auth.router import auth_router, users_router
@@ -15,7 +15,12 @@ from app.core import health
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.config import Settings, get_settings
 from app.core.db import create_db_engine, create_session_factory
-from app.core.http import AccessLogMiddleware, NoStoreMiddleware, RequestIdMiddleware
+from app.core.http import (
+    AccessLogMiddleware,
+    NoStoreMiddleware,
+    RequestIdMiddleware,
+    bind_request_id,
+)
 from app.core.logging import configure_logging
 from app.core.problem import install_exception_handlers
 from app.core.security import HashSlots, dummy_hash
@@ -54,6 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         summary="Diagnostic-test bookings, simulated payments and an idempotent payment webhook.",
         lifespan=lifespan,
         redirect_slashes=False,  # TolerantRouter serves the other spelling (spec section 4.3)
+        dependencies=[Depends(bind_request_id, scope="function")],
         docs_url="/docs" if docs else None,
         redoc_url="/redoc" if docs else None,
         openapi_url="/openapi.json" if docs else None,
