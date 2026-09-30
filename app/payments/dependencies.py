@@ -39,5 +39,5 @@ async def verified_webhook_payload(request: Request) -> WebhookPayload:
         # The same `loc` that FastAPI gives a body error, so the client sees an ordinary 422.
         problems = [{**item, "loc": ("body", *item["loc"])} for item in details]
         fields = [".".join(str(part) for part in ("body", *item["loc"])) for item in details]
-        log.warning("webhook.body_invalid", fields=fields)
+        log.warning("webhook.invalid", fields=fields)
         raise RequestValidationError(problems) from None

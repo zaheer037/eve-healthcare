@@ -151,10 +151,13 @@ class BookingRepository:
         stmt = self._locking_select(Booking.id == booking_id, Booking.user_id == user_id)
         return self._session.scalar(stmt)
 
-    def lock(self, booking_id: uuid.UUID) -> Booking | None:
-        """Lock a booking by its id, for the webhook. It has no user: it found the booking
-        through its own payment record and trusts nothing that the payload says about it."""
-        return self._session.scalar(self._locking_select(Booking.id == booking_id))
+    def lock(self, booking_id: uuid.UUID) -> Booking:
+        """Lock the booking of a payment, for the webhook. It has no user: it found the booking
+        through its own payment record and trusts nothing that the payload says about it.
+
+        A foreign key guarantees the booking, so a missing row is a bug and raises `NoResultFound`.
+        """
+        return self._session.scalars(self._locking_select(Booking.id == booking_id)).one()
 
     def has_pending_payment(self, booking_id: uuid.UUID) -> bool:
         """A separate statement after the lock, so it sees every payment that a rival committed

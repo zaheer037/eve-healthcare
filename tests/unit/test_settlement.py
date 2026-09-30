@@ -1,13 +1,14 @@
 """settle(): every row of the decision table in spec section 6.3. No database is involved."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Literal
 
 import pytest
 
 from app.models.booking import Booking, BookingStatus
 from app.models.payment import Payment, PaymentStatus, WebhookOutcome
-from app.payments.settlement import PaymentResult, Settlement, settle
+from app.payments.settlement import PaymentResult, Settlement, event_mismatch, settle
 
 NOW = datetime(2030, 1, 1, 12, 0, tzinfo=UTC)
 PENDING, SUCCESS, FAILED = PaymentStatus.PENDING, PaymentStatus.SUCCESS, PaymentStatus.FAILED
@@ -161,3 +162,40 @@ def test_a_review_is_the_only_outcome_that_asks_for_attention() -> None:
     assert Settlement.review("x").needs_attention is True
     assert Settlement.applied().needs_attention is False
     assert Settlement.noop().needs_attention is False
+
+
+# ==== the checks that come before settle(): does the event describe this payment?
+
+
+def mismatch(amount: str | None, currency: str | None) -> str | None:
+    return event_mismatch(
+        stored_amount=Decimal("499.00"),
+        stored_currency="INR",
+        amount=Decimal(amount) if amount is not None else None,
+        currency=currency,
+    )
+
+
+@pytest.mark.parametrize(
+    ("amount", "currency"),
+    [(None, None), ("499.00", "INR"), ("499", "INR"), ("499.0", None), (None, "INR")],
+)
+def test_an_event_that_agrees_with_the_payment_or_says_nothing_matches(
+    amount: str | None, currency: str | None
+) -> None:
+    assert mismatch(amount, currency) is None
+
+
+@pytest.mark.parametrize("amount", ["498.99", "499.01", "1.00", "0.01", "99999999.99"])
+def test_another_amount_is_a_mismatch(amount: str) -> None:
+    assert mismatch(amount, "INR") == "amount_mismatch"
+
+
+@pytest.mark.parametrize("currency", ["USD", "inr", "EUR"])
+def test_another_currency_is_a_mismatch(currency: str) -> None:
+    assert mismatch("499.00", currency) == "currency_mismatch"
+    assert mismatch(None, currency) == "currency_mismatch"
+
+
+def test_the_amount_is_judged_before_the_currency() -> None:
+    assert mismatch("1.00", "USD") == "amount_mismatch"

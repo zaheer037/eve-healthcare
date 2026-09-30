@@ -11,7 +11,14 @@ from app.core.db import SessionDep
 from app.core.http import located
 from app.core.routing import TolerantRouter
 from app.models.payment import PaymentStatus
-from app.payments.schemas import BookingRef, PaymentCreate, PaymentRead
+from app.payments.dependencies import verified_webhook_payload
+from app.payments.schemas import (
+    BookingRef,
+    PaymentCreate,
+    PaymentRead,
+    WebhookAck,
+    WebhookPayload,
+)
 from app.payments.service import PaymentService, PaymentView, PayOutcome
 from app.payments.simulator import PaymentSimulator
 
@@ -77,3 +84,52 @@ def get_payment(
 ) -> PaymentRead:
     """A payment of another user answers 403, and an unknown ID answers 404 (decision D3)."""
     return payment_read(service.get_owned(user.id, payment_id))
+
+
+# The handler declares no body, so FastAPI cannot document one. This does, and it documents the
+# signature header that the dependency reads (spec section 8.5).
+WEBHOOK_DOCS = {
+    "parameters": [
+        {
+            "name": "X-Webhook-Signature",
+            "in": "header",
+            "required": True,
+            "description": "`t=<unix seconds>,v1=<hex>`. `v1` is `HMAC_SHA256(secret, '<t>.' + raw"
+            " body)`. Outside production, `WEBHOOK_SIGNATURE_REQUIRED=false` skips the check.",
+            "schema": {"type": "string"},
+            "example": "t=1790000000,v1=afce76fa350828580fc1b9c5ad8784b180b096922bb87e29b10d10"
+            "8a7b51b385",
+        }
+    ],
+    "requestBody": {
+        "required": True,
+        "content": {
+            "application/json": {
+                "schema": WebhookPayload.model_json_schema(mode="validation"),
+                "example": {
+                    "event_id": "evt_01J8ZQ4M3K7W",
+                    "payment_id": "0d4b7a52-3f1e-4d0a-9b8c-2f6a1c7e9d10",
+                    "status": "SUCCESS",
+                    "provider_payment_id": "sim_0d4b7a523f1e4d0a9b8c2f6a1c7e9d10",
+                    "amount": "499.00",
+                    "currency": "INR",
+                },
+            }
+        },
+    },
+}
+
+
+@router.post(
+    "/webhook/", summary="Receive a payment event from the provider", openapi_extra=WEBHOOK_DOCS
+)
+def receive_webhook(
+    payload: Annotated[WebhookPayload, Depends(verified_webhook_payload)],
+    service: PaymentServiceDep,
+) -> WebhookAck:
+    """Every signed event with a valid body is stored once. A repeat answers `duplicate`.
+
+    A business failure is not an error: the answer is `200` and `outcome` says `REJECTED` or
+    `NEEDS_REVIEW`. `503` asks the provider to retry.
+    """
+    return service.handle_webhook(payload)

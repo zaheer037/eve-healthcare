@@ -8,7 +8,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy.exc import DataError
+from sqlalchemy.exc import DataError, InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Match
 from starlette.types import Scope
@@ -140,6 +141,20 @@ async def handle_data_error(request: Request, exc: Exception) -> JSONResponse:
     )
 
 
+async def handle_database_unavailable(request: Request, exc: Exception) -> JSONResponse:
+    """The database cannot answer now: a lock or statement timeout, a deadlock, a lost connection
+    or an exhausted pool. All of them mean "try again", so the client gets a 503 and a retry hint.
+    PostgreSQL text echoes row values, so it stays out of the response and the log."""
+    log.warning(
+        "database_unavailable",
+        error=type(exc).__name__,
+        sqlstate=getattr(getattr(exc, "orig", None), "sqlstate", None),
+    )
+    return problem_response(
+        errors.ServiceUnavailable("The service is busy. Try again shortly."), request.scope
+    )
+
+
 async def handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
     """The catch-all 500.
 
@@ -165,4 +180,6 @@ def install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, handle_http_exception)
     app.add_exception_handler(RequestValidationError, handle_validation_error)
     app.add_exception_handler(DataError, handle_data_error)
+    for unavailable in (OperationalError, InterfaceError, PoolTimeout):
+        app.add_exception_handler(unavailable, handle_database_unavailable)
     app.add_exception_handler(Exception, handle_unexpected)

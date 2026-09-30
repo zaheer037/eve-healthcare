@@ -1,13 +1,15 @@
 """Every error renders as RFC 9457 problem JSON with the same fields (spec section 7.3)."""
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
-from sqlalchemy.exc import DataError
+from sqlalchemy.exc import DataError, InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core import errors
@@ -31,6 +33,29 @@ class SetRequestId:
 class Thing(BaseModel):
     name: str
     age: int
+
+
+def add_database_routes(router: APIRouter) -> None:
+    """Routes that raise the database errors that the handlers know."""
+
+    @router.get("/data-error")
+    def data_error() -> None:
+        raise DataError("INSERT ... (a@x.in)", {}, Exception("Key (email)=(a@x.in) is bad"))
+
+    @router.get("/db-lock-timeout")
+    def db_lock_timeout() -> None:
+        pg_error = SimpleNamespace(sqlstate="55P03", diag=SimpleNamespace(constraint_name=None))
+        raise OperationalError("UPDATE users ... (a@x.in)", {}, pg_error)  # type: ignore[arg-type]
+
+    @router.get("/db-pool-timeout")
+    def db_pool_timeout() -> None:
+        raise PoolTimeout("QueuePool limit of size 10 overflow 10 reached, connection timed out")
+
+    @router.get("/db-interface")
+    def db_interface() -> None:
+        raise InterfaceError(
+            "SELECT 1", {}, RuntimeError("Key (email)=(a@x.in): connection closed")
+        )
 
 
 def build_app() -> FastAPI:
@@ -63,10 +88,6 @@ def build_app() -> FastAPI:
     def crash() -> None:
         raise RuntimeError("secret internal text: hunter2")
 
-    @router.get("/data-error")
-    def data_error() -> None:
-        raise DataError("INSERT ... (a@x.in)", {}, Exception("Key (email)=(a@x.in) is bad"))
-
     @router.get("/multi")
     def multi_get() -> dict[str, str]:
         return {}
@@ -75,6 +96,7 @@ def build_app() -> FastAPI:
     def multi_post() -> dict[str, str]:
         return {}
 
+    add_database_routes(router)
     app.include_router(router)
     return app
 
@@ -178,6 +200,22 @@ def test_a_database_data_error_is_a_422_without_the_database_text(client: TestCl
     assert response.json()["code"] == "VALIDATION_ERROR"
     assert "a@x.in" not in response.text
     assert "Key (email)" not in response.text
+
+
+@pytest.mark.parametrize("path", ["/db-lock-timeout", "/db-pool-timeout", "/db-interface"])
+def test_a_database_that_cannot_answer_is_a_503_that_asks_for_a_retry(
+    client: TestClient, path: str
+) -> None:
+    """A lock timeout, a statement timeout, an exhausted pool and a lost connection all mean
+    "try again". None of them shows the database text."""
+    response = client.get(path)
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "1"
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["code"] == "SERVICE_UNAVAILABLE"
+    assert response.json()["request_id"] == REQUEST_ID
+    for leak in ("a@x.in", "Key (email)", "QueuePool", "users"):
+        assert leak not in response.text
 
 
 def test_an_unexpected_error_is_a_500_with_no_internal_detail(client: TestClient) -> None:

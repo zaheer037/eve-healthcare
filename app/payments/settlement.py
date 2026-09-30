@@ -7,6 +7,7 @@ database.
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal, Self
 
 from app.bookings.state import transition
@@ -80,3 +81,22 @@ def settle(
         return Settlement.applied()
     # Unreachable while the cancel guard holds: a PENDING payment keeps its booking PENDING.
     return Settlement.review("booking_not_pending") if succeeded else Settlement.applied()
+
+
+def event_mismatch(
+    *,
+    stored_amount: Decimal,
+    stored_currency: str,
+    amount: Decimal | None,
+    currency: str | None,
+) -> str | None:
+    """The detail code of an event that does not describe the payment it names, or `None`.
+
+    An event that carries no amount or currency says nothing to compare. The amount is judged
+    before the currency. A mismatch stores the event as `REJECTED` and changes nothing else.
+    """
+    if amount is not None and amount != stored_amount:
+        return "amount_mismatch"
+    if currency is not None and currency != stored_currency:
+        return "currency_mismatch"
+    return None

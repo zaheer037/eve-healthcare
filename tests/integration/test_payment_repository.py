@@ -6,7 +6,7 @@ from collections.abc import Iterator
 
 import pytest
 from sqlalchemy import Engine, select, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import NoResultFound, OperationalError
 from sqlalchemy.orm import Session
 
 from app.bookings.repository import BookingRepository
@@ -73,15 +73,16 @@ def test_the_booking_of_a_known_payment_is_found_and_an_unknown_payment_has_none
 # ==== the row lock
 
 
-def test_lock_returns_the_payment_and_none_for_an_unknown_id(
+def test_lock_returns_the_payment_and_an_unknown_id_is_a_bug(
     db_session: Session, session: Session
 ) -> None:
+    """The webhook locks a payment only after it found its booking, and payments are never
+    deleted. A missing row is not a business case, so it raises."""
     payment = make_payment(db_session)
     repository = PaymentRepository(session)
-    locked = repository.lock(payment.id)
-    assert locked is not None
-    assert locked.id == payment.id
-    assert repository.lock(uuid.uuid4()) is None
+    assert repository.lock(payment.id).id == payment.id
+    with pytest.raises(NoResultFound):
+        repository.lock(uuid.uuid4())
 
 
 def test_lock_holds_the_row_until_the_transaction_ends(
@@ -127,7 +128,6 @@ def test_lock_refreshes_an_object_that_the_session_already_holds(
     payment = make_payment(db_session)
     repository = PaymentRepository(session)
     held = repository.lock(payment.id)
-    assert held is not None
     assert held.status is PaymentStatus.PENDING
     session.rollback()
     db_session.execute(

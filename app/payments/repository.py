@@ -30,8 +30,10 @@ class PaymentRepository:
         """The webhook reads the booking first, because the lock order is booking, then payment."""
         return self._session.scalar(select(Payment.booking_id).where(Payment.id == payment_id))
 
-    def lock(self, payment_id: uuid.UUID) -> Payment | None:
-        """Lock a payment. The caller has locked its booking already (spec section 4.2).
+    def lock(self, payment_id: uuid.UUID) -> Payment:
+        """Lock a payment that is known to exist. The caller has locked its booking already.
+
+        A payment is never deleted, so a missing row is a bug and raises `NoResultFound`.
 
         `FOR NO KEY UPDATE`, because a child insert takes `FOR KEY SHARE` on this row and a plain
         `FOR UPDATE` would conflict with it (sharp edge 29). `populate_existing`, or the ORM hands
@@ -43,7 +45,7 @@ class PaymentRepository:
             .with_for_update(key_share=True)
             .execution_options(populate_existing=True)
         )
-        return self._session.scalar(stmt)
+        return self._session.scalars(stmt).one()
 
     def reference_held_by_another(self, payment: Payment, provider_payment_id: str) -> bool:
         """Does another payment of this provider already carry this reference?
