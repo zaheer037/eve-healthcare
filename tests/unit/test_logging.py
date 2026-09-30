@@ -3,7 +3,6 @@
 import json
 import logging
 import sys
-from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
 
@@ -13,17 +12,6 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.logging import DropTraceback, configure_logging
 from tests.support import SettingsFactory
-
-
-@pytest.fixture(autouse=True)
-def restore_global_logging() -> Iterator[None]:
-    """`configure_logging` changes structlog and two Uvicorn loggers. Undo that after each test."""
-    yield
-    structlog.reset_defaults()
-    logging.getLogger("uvicorn.access").disabled = False
-    error_logger = logging.getLogger("uvicorn.error")
-    for existing in [f for f in error_logger.filters if isinstance(f, DropTraceback)]:
-        error_logger.removeFilter(existing)
 
 
 def emitted(capsys: pytest.CaptureFixture[str]) -> list[dict[str, Any]]:
