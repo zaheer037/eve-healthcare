@@ -309,7 +309,7 @@ def test_a_booking_takes_three_statements(
 
 
 def own_bookings(service: BookingService, user_id: uuid.UUID, **page: int) -> list[Booking]:
-    return service.list_own(user_id, PageParams(**page))[0]
+    return service.list_for_user(user_id, PageParams(**page))[0]
 
 
 def test_the_list_holds_only_my_bookings_newest_first(
@@ -320,7 +320,7 @@ def test_the_list_holds_only_my_bookings_newest_first(
     first = make_booking(db_session, user=me, offering=offering, appointment_at=future_slot(3))
     second = make_booking(db_session, user=me, offering=offering, appointment_at=future_slot(4))
     make_booking(db_session, user=other, offering=offering, appointment_at=future_slot(5))
-    listed, total = make_service().list_own(me.id, PageParams())
+    listed, total = make_service().list_for_user(me.id, PageParams())
     assert [booking.id for booking in listed] == [second.id, first.id]
     assert total == 2
 
@@ -356,7 +356,7 @@ def test_a_page_past_the_end_is_empty_and_the_total_is_still_reported(
 ) -> None:
     user = make_user(db_session)
     make_booking(db_session, user=user)
-    assert make_service().list_own(user.id, PageParams(limit=10, offset=50)) == ([], 1)
+    assert make_service().list_for_user(user.id, PageParams(limit=10, offset=50)) == ([], 1)
 
 
 def test_a_listed_booking_shows_its_names_without_more_sql(
@@ -369,26 +369,26 @@ def test_a_listed_booking_shows_its_names_without_more_sql(
     assert booking.test.name
 
 
-def test_get_own_returns_the_booking_with_its_payments_oldest_first(
+def test_get_owned_returns_the_booking_with_its_payments_oldest_first(
     db_session: Session, make_service: ServiceFactory
 ) -> None:
     user = make_user(db_session)
     booking = make_booking(db_session, user=user)
     failed = make_payment(db_session, booking=booking, status=PaymentStatus.FAILED)
     success = make_payment(db_session, booking=booking, status=PaymentStatus.SUCCESS)
-    found = make_service().get_own(user.id, booking.id)
+    found = make_service().get_owned(user.id, booking.id)
     assert found.id == booking.id
     assert [payment.id for payment in found.payments] == [failed.id, success.id]
     assert found.centre.name
     assert found.test.name
 
 
-def test_get_own_of_a_booking_without_payments_has_an_empty_list(
+def test_get_owned_of_a_booking_without_payments_has_an_empty_list(
     db_session: Session, make_service: ServiceFactory
 ) -> None:
     user = make_user(db_session)
     booking = make_booking(db_session, user=user)
-    assert make_service().get_own(user.id, booking.id).payments == []
+    assert make_service().get_owned(user.id, booking.id).payments == []
 
 
 def test_someone_elses_booking_is_forbidden_and_an_unknown_one_is_not_found(
@@ -398,9 +398,9 @@ def test_someone_elses_booking_is_forbidden_and_an_unknown_one_is_not_found(
     booking = make_booking(db_session, user=owner)
     service = make_service()
     with pytest.raises(Forbidden):
-        service.get_own(stranger.id, booking.id)
+        service.get_owned(stranger.id, booking.id)
     with pytest.raises(BookingNotFound):
-        service.get_own(stranger.id, uuid.uuid4())
+        service.get_owned(stranger.id, uuid.uuid4())
 
 
 def test_the_reads_take_two_one_and_two_statements(
@@ -416,9 +416,9 @@ def test_the_reads_take_two_one_and_two_statements(
             action()
         return counter.count
 
-    assert used(lambda: service.list_own(owner.id, PageParams())) == 2  # the count, the page
-    assert used(lambda: service.get_own(owner.id, booking.id)) == 1  # booking, names, payments
-    assert used(lambda: service.get_own(stranger.id, booking.id)) == 2  # then the existence read
+    assert used(lambda: service.list_for_user(owner.id, PageParams())) == 2  # the count, the page
+    assert used(lambda: service.get_owned(owner.id, booking.id)) == 1  # booking, names, payments
+    assert used(lambda: service.get_owned(stranger.id, booking.id)) == 2  # then the existence read
 
 
 # ==== cancel (T3.4)

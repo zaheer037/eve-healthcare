@@ -65,12 +65,12 @@ class BookingService:
             self._session.commit()  # one INSERT ... RETURNING
         return booking
 
-    def list_own(self, user_id: uuid.UUID, page: PageParams) -> tuple[list[Booking], int]:
+    def list_for_user(self, user_id: uuid.UUID, page: PageParams) -> tuple[list[Booking], int]:
         """One page of the user's bookings and their total. Two statements: the count, the page."""
         total = self._repository.count_for_user(user_id)
         return self._repository.list_for_user(user_id, page), total
 
-    def get_own(self, user_id: uuid.UUID, booking_id: uuid.UUID) -> Booking:
+    def get_owned(self, user_id: uuid.UUID, booking_id: uuid.UUID) -> Booking:
         """The user's booking with its payments. One statement, and a second only on a miss."""
         booking = self._repository.get_owned_with_payments(booking_id, user_id)
         if booking is None:

@@ -46,7 +46,7 @@ def create_booking(
 def list_bookings(
     user: CurrentUser, service: BookingServiceDep, page: PageParamsDep
 ) -> Page[BookingRead]:
-    bookings, total = service.list_own(user.id, page)
+    bookings, total = service.list_for_user(user.id, page)
     return Page[BookingRead](
         data=[BookingRead.model_validate(booking) for booking in bookings],
         pagination=page.describe(total),
@@ -58,7 +58,7 @@ def get_booking(
     booking_id: uuid.UUID, user: CurrentUser, service: BookingServiceDep
 ) -> BookingDetailRead:
     """A booking of another user answers 403, and an unknown ID answers 404 (decision D3)."""
-    return BookingDetailRead.model_validate(service.get_own(user.id, booking_id))
+    return BookingDetailRead.model_validate(service.get_owned(user.id, booking_id))
 
 
 @router.post("/{booking_id}/cancel", summary="Cancel one of my bookings")
