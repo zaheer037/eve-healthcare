@@ -1,13 +1,16 @@
 """Booking rules that need no database (spec sections 5.5 and 7.4). Pure functions."""
 
+import uuid
 from datetime import datetime, timedelta
 
 from app.core.errors import (
     AppError,
     AppointmentOutOfWindow,
     BookingLimitReached,
+    BookingNotPayable,
     Forbidden,
 )
+from app.models.booking import BookingStatus
 
 SECONDS_PER_MINUTE = 60
 
@@ -36,6 +39,22 @@ def check_active_cap(*, active: int, cap: int) -> None:
     """
     if active >= cap:
         raise BookingLimitReached(f"You already hold {cap} active bookings.")
+
+
+def check_payable(
+    *, booking_id: uuid.UUID, status: BookingStatus, appointment_at: datetime, now: datetime
+) -> None:
+    """Raise `BookingNotPayable` unless the booking is `PENDING` and its appointment lies ahead.
+
+    An appointment that starts exactly now has started (assumption A21). A booking that already
+    holds a live payment never gets here: the replay check comes first (spec section 8.1).
+    """
+    if status is not BookingStatus.PENDING:
+        raise BookingNotPayable(
+            f"Booking {booking_id} has status {status.value}. Only PENDING bookings can be paid."
+        )
+    if appointment_at <= now:
+        raise BookingNotPayable(f"The appointment of booking {booking_id} has already started.")
 
 
 def owner_error(*, exists: bool, not_found: AppError) -> AppError:

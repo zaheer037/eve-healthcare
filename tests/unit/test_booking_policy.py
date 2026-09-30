@@ -1,16 +1,24 @@
 """Booking rules that need no database: the window, the cap and the 403 or 404 choice."""
 
+import uuid
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from app.bookings.policy import check_active_cap, check_appointment_window, owner_error
+from app.bookings.policy import (
+    check_active_cap,
+    check_appointment_window,
+    check_payable,
+    owner_error,
+)
 from app.core.errors import (
     AppointmentOutOfWindow,
     BookingLimitReached,
     BookingNotFound,
+    BookingNotPayable,
     Forbidden,
 )
+from app.models.booking import BookingStatus
 
 NOW = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 LEAD = timedelta(minutes=30)
@@ -100,3 +108,37 @@ def test_a_booking_that_exists_but_is_not_yours_is_forbidden() -> None:
 def test_a_booking_that_does_not_exist_is_the_not_found_error_that_the_caller_names() -> None:
     not_found = BookingNotFound("No booking has this ID.")
     assert owner_error(exists=False, not_found=not_found) is not_found
+
+
+# ==== when a booking can be paid
+
+
+BOOKING_ID = uuid.uuid4()
+
+
+def payable(status: BookingStatus, appointment_at: datetime) -> None:
+    check_payable(booking_id=BOOKING_ID, status=status, appointment_at=appointment_at, now=NOW)
+
+
+def test_a_pending_booking_with_a_future_appointment_is_payable() -> None:
+    payable(BookingStatus.PENDING, NOW + timedelta(days=1))
+    payable(BookingStatus.PENDING, NOW + timedelta(microseconds=1))
+
+
+@pytest.mark.parametrize(
+    "status", [BookingStatus.CONFIRMED, BookingStatus.FAILED, BookingStatus.CANCELLED]
+)
+def test_a_booking_that_is_not_pending_is_not_payable_and_the_message_names_its_status(
+    status: BookingStatus,
+) -> None:
+    with pytest.raises(BookingNotPayable) as refused:
+        payable(status, NOW + timedelta(days=1))
+    assert status.value in str(refused.value)
+    assert str(BOOKING_ID) in str(refused.value)
+
+
+@pytest.mark.parametrize("started", [timedelta(0), timedelta(microseconds=1), timedelta(days=9)])
+def test_an_appointment_that_has_started_is_not_payable(started: timedelta) -> None:
+    """A start exactly now counts as started."""
+    with pytest.raises(BookingNotPayable, match="started"):
+        payable(BookingStatus.PENDING, NOW - started)

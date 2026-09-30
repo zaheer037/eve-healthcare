@@ -20,6 +20,7 @@ from app.core.logging import configure_logging
 from app.core.problem import install_exception_handlers
 from app.core.security import HashSlots, dummy_hash
 from app.core.throttle import LoginThrottle
+from app.payments.router import router as payments_router
 
 log = structlog.get_logger()
 
@@ -67,6 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(tests_public)
     app.include_router(tests_admin)
     app.include_router(bookings_router)
+    app.include_router(payments_router)
 
     # Starlette wraps in reverse order, so the last middleware added runs first. The order,
     # outermost first: request ID, access event, no-store headers, CORS, body limit. The access
