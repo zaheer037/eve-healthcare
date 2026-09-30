@@ -12,6 +12,10 @@ from app.core.config import Settings
 
 SettingsFactory = Callable[..., Settings]
 
+# The authentication lookup of every protected request. The query budgets of the spec leave it out,
+# so `QueryCounter(engine, ignore=(AUTH_LOOKUP,))` counts what the handler itself runs.
+AUTH_LOOKUP = "WHERE users.id = "
+
 
 def run_concurrently[T](calls: Sequence[Callable[[], T]]) -> list[T]:
     """Run every call in its own thread and return the results in order.
