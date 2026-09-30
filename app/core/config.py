@@ -4,6 +4,7 @@ The application does not start when a value is invalid. `ENVIRONMENT` has no def
 typo in its name stops the start-up instead of falling back to development defaults.
 """
 
+import ipaddress
 from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, Any, Literal
@@ -12,8 +13,9 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 MIN_SECRET_BYTES = 32
-# The compose defaults and the example secret in the documentation start with one of these.
-PLACEHOLDER_PREFIXES = ("dev-only-", "whsec_demo_only_", "change-me")
+# The compose defaults, the example secret in the documentation and the throwaway secrets of a CI
+# run all start with one of these. They are public, so no production may use them.
+PLACEHOLDER_PREFIXES = ("dev-only-", "whsec_demo_only_", "change-me", "ci-only-")
 
 
 class Environment(StrEnum):
@@ -25,6 +27,25 @@ class Environment(StrEnum):
 def _is_production(data: dict[str, Any]) -> bool:
     # `environment` is absent from `data` when its own validation failed. That error comes first.
     return data.get("environment") == Environment.PRODUCTION
+
+
+def trusts_every_address(forwarded_allow_ips: str) -> bool:
+    """Does the proxy list trust every hop? `*` does, and so does a network of prefix length 0.
+
+    Uvicorn then takes the leftmost `X-Forwarded-For` entry, which the client writes, so a client
+    picks its own address and its own throttle key. An entry that is no network (a host name)
+    trusts one host.
+    """
+    for raw in forwarded_allow_ips.split(","):
+        entry = raw.strip()
+        if entry == "*":
+            return True
+        try:
+            if ipaddress.ip_network(entry, strict=False).prefixlen == 0:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 class DatabaseSettings(BaseSettings):
@@ -112,7 +133,7 @@ class Settings(DatabaseSettings):
                 raise ValueError("the webhook signature cannot be disabled in production")
             if self.payment_allow_simulate_override:
                 raise ValueError("the simulate override cannot be enabled in production")
-            if "*" in {entry.strip() for entry in self.forwarded_allow_ips.split(",")}:
+            if trusts_every_address(self.forwarded_allow_ips):
                 raise ValueError("FORWARDED_ALLOW_IPS cannot trust every address in production")
         return self
 

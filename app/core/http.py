@@ -33,10 +33,10 @@ async def bind_request_id(request: Request) -> AsyncIterator[None]:
 
     A business event that a service logs inside a pool thread then carries the ID. An async
     dependency runs on the event loop in the context of this request, and the thread of a sync
-    handler starts from a copy of that context. Sharp edge 48 warns about two other places: a
-    contextvar that a middleware binds is gone before the catch-all 500 handler runs, and one that
-    a sync dependency binds stays in its own thread. The middleware and the 500 handler therefore
-    still read `scope["state"]`.
+    handler starts from a copy of that context. Two other places fail: a contextvar that a
+    middleware binds is gone before the catch-all 500 handler runs, and one that a sync dependency
+    binds stays in its own thread. The middleware and the 500 handler therefore still read
+    `scope["state"]` (ADR-22).
     """
     bind_contextvars(request_id=request.scope.get("state", {}).get("request_id"))
     try:

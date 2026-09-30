@@ -14,11 +14,14 @@ from fastapi.testclient import TestClient
 from httpx2 import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from structlog.contextvars import merge_contextvars
+from structlog.testing import capture_logs
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.auth import service as auth_service
 from app.core.config import Settings
 from app.core.security import hash_password, verify_password
+from app.core.throttle import account_key
 from app.main import create_app
 from app.models.user import Role, User
 from tests.factories import make_user
@@ -313,6 +316,33 @@ def test_the_eleventh_bad_login_for_one_account_is_429_with_retry_after(
     assert 1 <= int(refused.headers["retry-after"]) <= 15 * 60
 
 
+def test_a_failed_login_logs_the_client_and_a_short_account_key_and_never_the_email(
+    client: TestClient, logs: list[dict[str, Any]], db_session: Session
+) -> None:
+    user = make_user(db_session, password_hash=PASSWORD_HASH)
+    assert post_login(client, user.email, "wrong pass phrase").status_code == 401
+    (failed,) = [line for line in logs if line["event"] == "auth.login_failed"]
+    assert failed["log_level"] == "warning"
+    assert failed["client"] == "testclient"  # the gate binds it, as the request ID is bound
+    assert failed["account"] == account_key(user.email)[:12]
+    assert user.email not in str(logs)
+
+
+def test_a_throttled_login_is_logged_with_its_scope_and_a_retry_hint(
+    client_with: ClientFactory,
+) -> None:
+    client = client_with(login_max_failures=2)
+    email = new_email()
+    with capture_logs(processors=[merge_contextvars]) as logs:
+        for _ in range(2):
+            post_login(client, email)
+        assert post_login(client, email).status_code == 429
+    (throttled,) = [line for line in logs if line["event"] == "auth.throttled"]
+    assert (throttled["log_level"], throttled["scope"]) == ("warning", "account")
+    assert (throttled["client"], throttled["retry_after"] >= 1) == ("testclient", True)
+    assert email not in str(logs)
+
+
 def test_the_account_limit_also_covers_an_email_that_does_not_exist(
     client_with: ClientFactory,
 ) -> None:
@@ -403,6 +433,29 @@ def test_a_spoofed_forwarded_for_header_does_not_change_the_throttle_key(
             headers={"X-Forwarded-For": "6.6.6.6, 198.51.100.8"},
         )
         assert other.status_code == 401  # another real address is not limited
+
+
+def test_the_addresses_of_one_ipv6_64_behind_the_proxy_share_one_budget(
+    test_settings: Settings,
+) -> None:
+    """AB38: a client that owns a /64 cannot get a fresh budget by changing its address."""
+    settings = test_settings.model_copy(update={"auth_ip_limit_per_minute": 3})
+    proxied = ProxyHeadersMiddleware(create_app(settings), trusted_hosts=["203.0.113.9"])
+    with TestClient(proxied, client=("203.0.113.9", 50000)) as through_the_proxy:
+        for number in range(3):
+            headers = {"X-Forwarded-For": f"2001:db8:abcd:12::{number:x}"}
+            body = {"email": new_email(), "password": "x"}
+            assert (
+                through_the_proxy.post("/auth/login", json=body, headers=headers).status_code == 401
+            )
+        fresh = {"X-Forwarded-For": "2001:db8:abcd:12:aaaa:bbbb:cccc:dddd"}
+        body = {"email": new_email(), "password": "x"}
+        assert through_the_proxy.post("/auth/login", json=body, headers=fresh).status_code == 429
+        next_network = {"X-Forwarded-For": "2001:db8:abcd:13::1"}
+        assert (
+            through_the_proxy.post("/auth/login", json=body, headers=next_network).status_code
+            == 401
+        )
 
 
 def test_every_hashing_slot_taken_is_a_503_at_once(client_with: ClientFactory) -> None:

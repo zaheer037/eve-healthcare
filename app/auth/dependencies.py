@@ -8,6 +8,7 @@ from fastapi import Depends, Form, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import SecretStr
+from structlog.contextvars import bind_contextvars, unbind_contextvars
 
 from app.auth.repository import UserRepository
 from app.auth.schemas import LoginRequest, SignupRequest, TokenForm
@@ -15,7 +16,7 @@ from app.core.config import Settings
 from app.core.db import SessionDep
 from app.core.errors import Forbidden, InvalidToken, NotAuthenticated
 from app.core.security import HashSlots, decode_access_token
-from app.core.throttle import LoginThrottle
+from app.core.throttle import LoginThrottle, client_key
 from app.models.user import Role, User
 
 # auto_error=False: a missing header must give our problem response, not FastAPI's own.
@@ -61,13 +62,19 @@ async def auth_gate(request: Request, email: str | None = None) -> AsyncIterator
     """Throttle the request, then hold a hashing slot until the handler returns.
 
     It runs on the event loop, before the request needs a pool thread. The throttle comes first,
-    so a client that must back off hears 429 and not 503. Nothing here waits.
+    so a client that must back off hears 429 and not 503. Nothing here waits. The client key
+    goes into the log context for the length of the request, as the request ID does.
     """
     throttle: LoginThrottle = request.app.state.throttle
     slots: HashSlots = request.app.state.hash_slots
-    throttle.check(client_ip(request), email)
-    with slots.slot():
-        yield
+    client = client_key(client_ip(request))
+    bind_contextvars(client=client)  # so a failed login and a refusal name the client
+    try:
+        throttle.check(client, email)
+        with slots.slot():
+            yield
+    finally:
+        unbind_contextvars("client")
 
 
 def check_password_length(password: SecretStr, minimum: int) -> None:

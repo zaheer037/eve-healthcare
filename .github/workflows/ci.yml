@@ -46,12 +46,15 @@ jobs:
       ENVIRONMENT: test
       DATABASE_URL: postgresql+psycopg://eve:ci-only-throwaway-password@localhost:5432/eve
       TEST_DATABASE_URL: postgresql+psycopg://eve:ci-only-throwaway-password@localhost:5432/eve_test
-      JWT_SECRET: ci-only-jwt-secret-0123456789abcdef0123456789
-      WEBHOOK_SECRET: ci-only-webhook-secret-0123456789abcdef01234
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10
       - run: uv sync --frozen
+      - name: Make throwaway secrets for this run
+        # Random values, so the repository publishes no secret that a production could copy.
+        run: |
+          echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "WEBHOOK_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - name: Migrate an empty database
         run: uv run alembic upgrade head
       - name: Check that the models and the migrations agree

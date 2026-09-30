@@ -10,7 +10,8 @@ STRONG_JWT = "j" * 40
 STRONG_WEBHOOK = "w" * 40
 DEV_JWT = "dev-only-jwt-secret-change-me-0123456789abcdef"
 DEV_WEBHOOK = "dev-only-webhook-secret-change-me-0123456789"
-SPEC_EXAMPLE_WEBHOOK = "whsec_demo_only_not_a_real_secret_0123456789"
+DOCUMENTED_WEBHOOK = "whsec_demo_only_not_a_real_secret_0123456789"
+CI_JWT = "ci-only-jwt-secret-0123456789abcdef0123456789"
 
 
 def test_defaults_in_development(make_settings: SettingsFactory) -> None:
@@ -75,7 +76,7 @@ def test_the_length_is_counted_in_bytes(make_settings: SettingsFactory) -> None:
 
 @pytest.mark.parametrize("environment", ["test", "production"])
 @pytest.mark.parametrize(
-    "placeholder", [DEV_JWT, DEV_WEBHOOK, SPEC_EXAMPLE_WEBHOOK, "change-me" * 5]
+    "placeholder", [DEV_JWT, DEV_WEBHOOK, DOCUMENTED_WEBHOOK, CI_JWT, "change-me" * 5]
 )
 def test_a_placeholder_secret_is_refused_outside_development(
     make_settings: SettingsFactory, environment: str, placeholder: str
@@ -104,16 +105,26 @@ def test_production_refuses_the_simulate_override(make_settings: SettingsFactory
         make_settings(environment="production", payment_allow_simulate_override=True)
 
 
-@pytest.mark.parametrize("value", ["*", "10.0.0.5, *", " * "])
-def test_production_refuses_a_wildcard_proxy_list(
+@pytest.mark.parametrize(
+    "value",
+    ["*", "10.0.0.5, *", " * ", "0.0.0.0/0", "::/0", "10.0.0.5,0.0.0.0/0", "192.168.1.1/0"],
+)
+def test_production_refuses_a_proxy_list_that_trusts_every_address(
     make_settings: SettingsFactory, value: str
 ) -> None:
+    """Uvicorn takes the leftmost `X-Forwarded-For` entry when every hop is trusted, and the
+    client writes that entry. A network of prefix length 0 trusts every hop as `*` does."""
     with pytest.raises(ValidationError, match="FORWARDED_ALLOW_IPS"):
         make_settings(environment="production", forwarded_allow_ips=value)
 
 
-def test_a_named_proxy_network_is_accepted_in_production(make_settings: SettingsFactory) -> None:
-    assert make_settings(environment="production", forwarded_allow_ips="10.0.0.0/8,172.16.0.5")
+@pytest.mark.parametrize(
+    "value", ["10.0.0.0/8,172.16.0.5", "127.0.0.1,::1", "fd00::/8", "10.0.0.0/8, proxy.internal"]
+)
+def test_a_named_proxy_network_is_accepted_in_production(
+    make_settings: SettingsFactory, value: str
+) -> None:
+    assert make_settings(environment="production", forwarded_allow_ips=value)
 
 
 def test_development_accepts_the_wildcard(make_settings: SettingsFactory) -> None:
