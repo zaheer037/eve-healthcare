@@ -15,9 +15,12 @@ from structlog.testing import capture_logs
 
 from app.core.config import Settings
 from app.core.db import create_db_engine
+from app.core.security import create_access_token
 from app.main import create_app
 from app.models.base import Base
+from app.models.user import Role, User
 from tests.database import ensure_database, migrate, reset_schema
+from tests.factories import make_user
 from tests.support import QueryCounter
 
 TEST_JWT_SECRET = "test-jwt-secret-0123456789abcdef0123456789"
@@ -124,3 +127,36 @@ def logs(client: TestClient) -> Iterator[list[dict[str, Any]]]:
     reconfigures logging."""
     with capture_logs() as captured:
         yield captured
+
+
+@pytest.fixture
+def auth_headers(test_settings: Settings) -> Callable[[User], dict[str, str]]:
+    """`auth_headers(user)` is the `Authorization` header of a valid token for that user."""
+
+    def build(user: User) -> dict[str, str]:
+        token, _ = create_access_token(user.id, test_settings)
+        return {"Authorization": f"Bearer {token}"}
+
+    return build
+
+
+@pytest.fixture
+def patient(db_session: Session) -> User:
+    return make_user(db_session)
+
+
+@pytest.fixture
+def admin(db_session: Session) -> User:
+    return make_user(db_session, role=Role.ADMIN)
+
+
+@pytest.fixture
+def patient_headers(
+    patient: User, auth_headers: Callable[[User], dict[str, str]]
+) -> dict[str, str]:
+    return auth_headers(patient)
+
+
+@pytest.fixture
+def admin_headers(admin: User, auth_headers: Callable[[User], dict[str, str]]) -> dict[str, str]:
+    return auth_headers(admin)
