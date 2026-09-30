@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = []
 
     # Logging
-    log_level: str = "INFO"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["json", "console"] = "json"
 
     # Read by the seed script only
