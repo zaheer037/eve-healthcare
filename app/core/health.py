@@ -20,6 +20,8 @@ class HealthRead(BaseModel):
 
 @router.get("/live", summary="The process is up")
 async def health_live() -> HealthRead:
+    """Answers `ok` while the process runs. It touches no database, so an orchestrator can restart
+    the container on it."""
     # async def on purpose: no thread is needed, so the probe still answers when every
     # thread of the pool is busy. Blocking work never belongs in this handler.
     return HealthRead(status="ok")
@@ -27,6 +29,8 @@ async def health_live() -> HealthRead:
 
 @router.get("/ready", summary="The database answers")
 def health_ready(session: SessionDep) -> HealthRead:
+    """Answers `ok` when the database answers, and `503` when it does not. An orchestrator holds
+    traffic back until then."""
     try:
         session.execute(text("SELECT 1"))
     except (OperationalError, InterfaceError, PoolTimeoutError) as error:

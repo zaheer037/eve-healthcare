@@ -1,7 +1,7 @@
 """Offset pagination with hard caps (architecture §5.1).
 
 `limit` is 1 to 100 and `offset` is 0 to 10,000, so the worst page is bounded. Every list has
-a fixed order with an `id` tie-breaker. `# ponytail: offset pagination -> keyset on
+a fixed order with an `id` tie-breaker. `# known limit: offset pagination -> keyset on
 (created_at, id) when a user can hold thousands of bookings`.
 """
 

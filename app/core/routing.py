@@ -9,7 +9,7 @@ from fastapi import APIRouter
 class TolerantRouter(APIRouter):
     """Serve every route with and without the trailing slash, and answer HEAD wherever GET works.
 
-    The PDF fixes `/payments/` and `/payments/webhook/`. A sender such as a payment provider
+    The assignment fixes `/payments/` and `/payments/webhook/`. A sender such as a payment provider
     treats a redirect as a failed delivery, so the other spelling is a second route, not a 307.
     Only the canonical spelling appears in OpenAPI. The app must also set
     `redirect_slashes=False`.

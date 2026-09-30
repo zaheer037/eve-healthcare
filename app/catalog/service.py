@@ -70,8 +70,8 @@ class CatalogService:
 
     def update_centre(self, centre_id: uuid.UUID, changes: Mapping[str, Any]) -> Centre:
         """Apply the fields that the client sent. It also finds an inactive row, so a PATCH can
-        restore it. `# ponytail: last write wins -> lock the row with SELECT ... FOR UPDATE if two
-        admins edit one centre at once`.
+        restore it. `# known limit: last write wins -> lock the row with SELECT ... FOR UPDATE if
+        two admins edit one centre at once`.
 
         Raises:
             CentreNotFound: no centre has this ID.

@@ -1,5 +1,7 @@
-# Environment and caches
+# Environment and caches. `.env.example` is the one file that stays.
 .env
+.env.*
+!.env.example
 .venv*/
 __pycache__/
 *.py[cod]
@@ -12,8 +14,10 @@ htmlcov/
 build/
 dist/
 
-# Local notes and drafts. They are not part of the project.
-docs/ARCHITECTURE.working.md
-docs/spikes/
-docs/.draft*/
+# The assignment brief belongs to its author, so it stays out of the repository.
 EVE_SDE_Intern_Hiring_Assignment_*.pdf
+
+# Editors and the operating system
+.idea/
+.vscode/
+.DS_Store

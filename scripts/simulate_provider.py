@@ -123,7 +123,7 @@ def backoff(
     """The wait after a failed attempt: exponential, capped, with full jitter.
 
     A random point below the ceiling stops many providers from retrying in step.
-    `# ponytail: Retry-After is not honoured -> wait at least as long as the server asks`.
+    `# known limit: Retry-After is not honoured -> wait at least as long as the server asks`.
     """
     return jitter() * min(cap, base * 2.0 ** (attempt - 1))
 

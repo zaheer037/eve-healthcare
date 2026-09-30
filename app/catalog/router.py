@@ -105,6 +105,8 @@ def list_centres(
     responses=problems(CentreNotFound, ValidationFailed),
 )
 def get_centre(centre_id: uuid.UUID, service: CatalogServiceDep) -> CentreDetailRead:
+    """An active centre with the tests that it offers now and their prices. An inactive centre
+    answers `404`, as an unknown one does."""
     centre, offered = service.get_centre(centre_id)
     return centre_detail(centre, offered)
 
@@ -121,6 +123,7 @@ def get_centre(centre_id: uuid.UUID, service: CatalogServiceDep) -> CentreDetail
 def create_centre(
     data: CentreCreate, service: CatalogServiceDep, request: Request, response: Response
 ) -> CentreRead:
+    """Add an active centre. Two centres cannot share a name and a location."""
     centre = service.create_centre(name=data.name, location=data.location, city=data.city)
     located(request, response, "get_centre", centre_id=centre.id)
     return centre_read(centre)
@@ -134,6 +137,7 @@ def create_centre(
 def update_centre(
     centre_id: uuid.UUID, data: CentreUpdate, service: CatalogServiceDep
 ) -> CentreRead:
+    """Send only the fields to change. `{"is_active": true}` restores a deactivated centre."""
     return centre_read(service.update_centre(centre_id, data.changes()))
 
 
@@ -200,6 +204,7 @@ def list_tests(
     responses=problems(DiagnosticTestNotFound, ValidationFailed),
 )
 def get_test(test_id: uuid.UUID, service: CatalogServiceDep) -> DiagnosticTestRead:
+    """An active diagnostic test. An inactive one answers `404`, as an unknown one does."""
     return diagnostic_test_read(service.get_test(test_id))
 
 
@@ -215,6 +220,7 @@ def get_test(test_id: uuid.UUID, service: CatalogServiceDep) -> DiagnosticTestRe
 def create_test(
     data: DiagnosticTestCreate, service: CatalogServiceDep, request: Request, response: Response
 ) -> DiagnosticTestRead:
+    """Add an active test. The code and the name are each unique."""
     test = service.create_test(code=data.code, name=data.name, description=data.description)
     located(request, response, "get_test", test_id=test.id)
     return diagnostic_test_read(test)
@@ -230,6 +236,7 @@ def create_test(
 def update_test(
     test_id: uuid.UUID, data: DiagnosticTestUpdate, service: CatalogServiceDep
 ) -> DiagnosticTestRead:
+    """Send only the fields to change. `{"is_active": true}` restores a deactivated test."""
     return diagnostic_test_read(service.update_test(test_id, data.changes()))
 
 
@@ -240,4 +247,5 @@ def update_test(
     responses=problems(*ADMIN_ONLY, DiagnosticTestNotFound, ValidationFailed),
 )
 def deactivate_test(test_id: uuid.UUID, service: CatalogServiceDep) -> None:
+    """A test is never deleted, because bookings refer to it. A repeated call is not an error."""
     service.deactivate_test(test_id)

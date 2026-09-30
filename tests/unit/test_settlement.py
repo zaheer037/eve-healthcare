@@ -164,12 +164,6 @@ def test_a_settlement_is_built_by_its_named_constructors() -> None:
     assert Settlement.review("terminal_conflict") == Settlement(REVIEW, "terminal_conflict")
 
 
-def test_a_review_is_the_only_outcome_that_asks_for_attention() -> None:
-    assert Settlement.review("x").needs_attention is True
-    assert Settlement.applied().needs_attention is False
-    assert Settlement.noop().needs_attention is False
-
-
 # ==== the checks that come before settle(): does the event describe this payment?
 
 

@@ -40,6 +40,8 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
     responses=problems(EmailAlreadyRegistered, ValidationFailed, RateLimited),
 )
 def signup(data: SignupInput, service: AuthServiceDep) -> User:
+    """Create a patient. The password needs at least `PASSWORD_MIN_LENGTH` characters (15 by
+    default). A second signup with the same email, in any letter case, answers `409`."""
     return service.signup(
         email=data.email,
         password=data.password.get_secret_value(),
@@ -54,6 +56,9 @@ def signup(data: SignupInput, service: AuthServiceDep) -> User:
     responses=problems(InvalidCredentials, ValidationFailed, RateLimited),
 )
 def login(credentials: LoginInput, service: AuthServiceDep) -> TokenRead:
+    """Check the email and the password, and return a token for `Authorization: Bearer <token>`.
+    An unknown email and a wrong password give the same `401`. By default, ten wrong passwords for
+    one account within 15 minutes give `429`."""
     token, expires_in = service.login(credentials.email, credentials.password.get_secret_value())
     return TokenRead(access_token=token, expires_in=expires_in)
 
@@ -64,6 +69,8 @@ def login(credentials: LoginInput, service: AuthServiceDep) -> TokenRead:
     responses=problems(InvalidCredentials, ValidationFailed, RateLimited),
 )
 def token(form: TokenInput, service: AuthServiceDep) -> TokenRead:
+    """The same check as `POST /auth/login` for the OAuth2 password form. The Authorize button of
+    Swagger posts here, and `username` is the email."""
     access_token, expires_in = service.login(form.username, form.password.get_secret_value())
     return TokenRead(access_token=access_token, expires_in=expires_in)
 
@@ -75,4 +82,5 @@ def token(form: TokenInput, service: AuthServiceDep) -> TokenRead:
     responses=problems(NotAuthenticated, InvalidToken),
 )
 def read_me(user: CurrentUser) -> User:
+    """The user that the token names, without the password hash."""
     return user

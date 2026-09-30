@@ -195,7 +195,7 @@ def test_every_json_body_has_an_example(schema: dict[str, Any]) -> None:
 
 def test_every_operation_has_a_description(schema: dict[str, Any]) -> None:
     for (method, path), operation in operations(schema).items():
-        assert operation.get("description") or operation.get("summary"), (method, path)
+        assert operation.get("description"), (method, path)
 
 
 def test_the_tags_are_described_and_the_bearer_scheme_is_offered(schema: dict[str, Any]) -> None:

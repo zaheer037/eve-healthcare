@@ -45,11 +45,6 @@ class Settlement:
     def review(cls, detail: str) -> Self:
         return cls(WebhookOutcome.NEEDS_REVIEW, detail)
 
-    @property
-    def needs_attention(self) -> bool:
-        """An operator must look at it: the money and the booking may disagree."""
-        return self.outcome is WebhookOutcome.NEEDS_REVIEW
-
 
 def settle(
     booking: Booking, payment: Payment, result: PaymentResult, *, now: datetime

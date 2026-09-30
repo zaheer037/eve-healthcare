@@ -18,7 +18,8 @@ CMD ["pytest", "-q"]
 FROM python:3.12-slim-trixie
 RUN useradd --uid 10001 --create-home app
 WORKDIR /srv
-COPY --from=builder --chown=app:app /srv /srv
+# Root owns the code. The app user reads it and cannot rewrite it.
+COPY --from=builder /srv /srv
 ENV PATH="/srv/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 USER app
 EXPOSE 8000

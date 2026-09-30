@@ -42,9 +42,10 @@ class BookingService:
         """Book a test at a centre for one user. Three statements (architecture §5.4).
 
         The booking copies the price that it reads here, so a later price change leaves it alone.
-        The cap is soft: two simultaneous requests can both pass the count. `# ponytail: soft cap
-        -> lock the user row with SELECT ... FOR NO KEY UPDATE if the cap must be exact`. The
-        unique index on the active slot decides between two identical requests.
+        The cap is soft: requests that arrive together can all pass the count, by as many as are
+        in flight. `# known limit: soft cap -> lock the user row with SELECT ... FOR NO KEY UPDATE
+        if the cap must be exact`. The unique index on the active slot decides between two
+        identical requests.
 
         Raises:
             CentreTestNotFound: the centre does not offer this test now (unknown, unavailable or

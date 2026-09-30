@@ -27,7 +27,7 @@ from app.payments.simulator import PaymentSimulator
 
 log = structlog.get_logger()
 
-PROVIDER = "SIMULATOR"  # ponytail: one provider -> route per provider (architecture §6.5)
+PROVIDER = "SIMULATOR"  # known limit: one provider -> route per provider (architecture §6.5)
 # A rival transaction can take a provider reference between the check and the write. The unique
 # index stops the second one, and a second run of the transaction then sees the first
 # (architecture §6.3).

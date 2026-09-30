@@ -35,7 +35,7 @@ def check_appointment_window(
 def check_active_cap(*, active: int, cap: int) -> None:
     """Raise `BookingLimitReached` when the user already holds `cap` active future bookings.
 
-    The cap is soft: two simultaneous requests can both pass it (assumption A17).
+    The cap is soft: requests that arrive together can all pass it (assumption A17).
     """
     if active >= cap:
         raise BookingLimitReached(f"You already hold {cap} active bookings.")
