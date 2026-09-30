@@ -56,6 +56,22 @@ def violated_constraint(error: DBAPIError) -> str | None:
 
 
 @contextmanager
+def transaction(session: Session) -> Iterator[None]:
+    """One use case, one transaction: commit when the block ends, roll back when it raises.
+
+    A service method that writes or locks runs inside it. Every lock is then released before
+    FastAPI serialises the response, and a refusal never leaves a transaction open (spec section
+    4.2).
+    """
+    try:
+        yield
+        session.commit()
+    except BaseException:
+        session.rollback()
+        raise
+
+
+@contextmanager
 def domain_errors(session: Session, by_constraint: Mapping[str, AppError]) -> Iterator[None]:
     """Turn a violated constraint into the domain error that names it.
 

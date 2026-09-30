@@ -9,6 +9,7 @@ from pydantic import AfterValidator, AwareDatetime, BaseModel, BeforeValidator, 
 from pydantic_core import PydanticCustomError
 
 from app.models.booking import BookingStatus
+from app.models.payment import PaymentStatus
 
 
 def _text_or_datetime_only(value: object) -> object:
@@ -69,3 +70,20 @@ class BookingRead(BaseModel):
     currency: str
     status: BookingStatus
     created_at: datetime
+
+
+class PaymentSummary(BaseModel):
+    """A payment as a booking shows it. `PaymentRead` in the payments package has more."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    amount: Decimal
+    currency: str
+    status: PaymentStatus
+    failure_reason: str | None
+    settled_at: datetime | None
+
+
+class BookingDetailRead(BookingRead):
+    payments: list[PaymentSummary]

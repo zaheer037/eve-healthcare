@@ -25,6 +25,7 @@ from app.catalog.schemas import (
 )
 from app.catalog.service import CatalogService
 from app.core.db import SessionDep
+from app.core.http import located
 from app.core.pagination import Page, PageParamsDep
 from app.core.routing import TolerantRouter
 from app.core.schemas import SafeText
@@ -62,12 +63,6 @@ def centre_detail(centre: Centre, offered: list[OfferedTest]) -> CentreDetailRea
 
 def diagnostic_test_read(test: DiagnosticTest) -> DiagnosticTestRead:
     return DiagnosticTestRead.model_validate(test)
-
-
-def located(request: Request, response: Response, route_name: str, **path_params: object) -> None:
-    """Set `Location` to a path. `url_path_for` returns no host, so a hostile Host header cannot
-    reach it (sharp edge 47)."""
-    response.headers["Location"] = str(request.app.url_path_for(route_name, **path_params))
 
 
 # ================================================================ centres (public)

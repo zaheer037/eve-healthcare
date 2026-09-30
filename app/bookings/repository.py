@@ -5,12 +5,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import exists, func, select
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import set_committed_value
 
+from app.core.pagination import PageParams
 from app.models.booking import ACTIVE_STATUSES, Booking
 from app.models.catalog import Centre, CentreTest, DiagnosticTest
+from app.models.payment import Payment, PaymentStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,3 +81,91 @@ class BookingRepository:
         set_committed_value(booking, "centre", offering.centre)
         set_committed_value(booking, "test", offering.test)
         return booking
+
+    # ---------------------------------------------------------------- reads
+
+    def count_for_user(self, user_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(Booking).where(Booking.user_id == user_id)
+        return self._session.scalar(stmt) or 0
+
+    def list_for_user(self, user_id: uuid.UUID, page: PageParams) -> list[Booking]:
+        """One page of the user's bookings, newest first, with the names of the centre and test.
+
+        The order is that of `ix_bookings_user_created`, and the id breaks a tie in `created_at`.
+        """
+        stmt = (
+            select(Booking)
+            .where(Booking.user_id == user_id)
+            .options(
+                joinedload(Booking.centre, innerjoin=True),
+                joinedload(Booking.test, innerjoin=True),
+            )
+            .order_by(Booking.created_at.desc(), Booking.id.desc())
+            .limit(page.limit)
+            .offset(page.offset)
+        )
+        return list(self._session.scalars(stmt))
+
+    def get_owned_with_payments(self, booking_id: uuid.UUID, user_id: uuid.UUID) -> Booking | None:
+        """The booking, its names and all its payments in ONE statement: one snapshot, so the
+        booking status and its payments always agree. The owner predicate is in the query."""
+        stmt = (
+            select(Booking)
+            .where(Booking.id == booking_id, Booking.user_id == user_id)
+            .options(
+                joinedload(Booking.centre, innerjoin=True),
+                joinedload(Booking.test, innerjoin=True),
+                joinedload(Booking.payments),
+            )
+        )
+        return self._session.execute(stmt).unique().scalar_one_or_none()
+
+    def exists(self, booking_id: uuid.UUID) -> bool:
+        """A plain read that tells 403 from 404 after an owner-scoped read found nothing."""
+        return bool(self._session.scalar(select(exists().where(Booking.id == booking_id))))
+
+    # ---------------------------------------------------------------- cancel
+
+    def lock_owned(self, booking_id: uuid.UUID, user_id: uuid.UUID) -> Booking | None:
+        """Lock the user's booking, or return `None`. The rules of spec section 4.2:
+
+        1. `FOR NO KEY UPDATE`, because a child insert takes `FOR KEY SHARE` on this row.
+        2. `populate_existing`, or the ORM returns a stale object that is already in the session.
+        3. The owner predicate is in the query, so a stranger finds no row and never waits behind
+           the owner's lock (sharp edge 30).
+        4. One table, no joined loading.
+        """
+        stmt = (
+            select(Booking)
+            .where(Booking.id == booking_id, Booking.user_id == user_id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+        return self._session.scalar(stmt)
+
+    def has_pending_payment(self, booking_id: uuid.UUID) -> bool:
+        """A separate statement after the lock, so it sees every payment that a rival committed
+        before it released the lock."""
+        stmt = select(
+            exists().where(
+                Payment.booking_id == booking_id, Payment.status == PaymentStatus.PENDING
+            )
+        )
+        return bool(self._session.scalar(stmt))
+
+    def attach_names(self, booking: Booking) -> None:
+        """Load the centre and the test of a locked booking, for the response.
+
+        The locking query reads one table, so the names come from one more statement. It also
+        flushes the change that the service made, in the same transaction.
+        """
+        # Joined through `centre_tests`: the booking's composite foreign key guarantees the row.
+        stmt = (
+            select(Centre, DiagnosticTest)
+            .join(CentreTest, CentreTest.centre_id == Centre.id)
+            .join(DiagnosticTest, DiagnosticTest.id == CentreTest.test_id)
+            .where(CentreTest.centre_id == booking.centre_id, CentreTest.test_id == booking.test_id)
+        )
+        centre, test = self._session.execute(stmt).one()
+        set_committed_value(booking, "centre", centre)
+        set_committed_value(booking, "test", test)

@@ -5,13 +5,20 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.bookings.policy import check_active_cap, check_appointment_window
+from app.bookings.policy import check_active_cap, check_appointment_window, owner_error
 from app.bookings.repository import BookingRepository
+from app.bookings.state import transition
 from app.core.clock import Clock, utcnow
 from app.core.config import Settings
-from app.core.db import domain_errors
-from app.core.errors import CentreTestNotFound, DuplicateBooking
-from app.models.booking import Booking
+from app.core.db import domain_errors, transaction
+from app.core.errors import (
+    BookingNotFound,
+    CentreTestNotFound,
+    DuplicateBooking,
+    PaymentInProgress,
+)
+from app.core.pagination import PageParams
+from app.models.booking import Booking, BookingStatus
 
 
 class BookingService:
@@ -56,4 +63,41 @@ class BookingService:
         taken = {"uq_bookings_active_slot": DuplicateBooking("You already booked this slot.")}
         with domain_errors(self._session, taken):
             self._session.commit()  # one INSERT ... RETURNING
+        return booking
+
+    def list_own(self, user_id: uuid.UUID, page: PageParams) -> tuple[list[Booking], int]:
+        """One page of the user's bookings and their total. Two statements: the count, the page."""
+        total = self._repository.count_for_user(user_id)
+        return self._repository.list_for_user(user_id, page), total
+
+    def get_own(self, user_id: uuid.UUID, booking_id: uuid.UUID) -> Booking:
+        """The user's booking with its payments. One statement, and a second only on a miss."""
+        booking = self._repository.get_owned_with_payments(booking_id, user_id)
+        if booking is None:
+            raise owner_error(
+                exists=self._repository.exists(booking_id),
+                not_found=BookingNotFound("No booking has this ID."),
+            )
+        return booking
+
+    def cancel(self, *, user_id: uuid.UUID, booking_id: uuid.UUID) -> Booking:
+        """Cancel the user's booking. A repeated cancel is a no-op that answers the same.
+
+        The row lock makes the check for a pending payment and the status change one step
+        against a payment or a webhook (spec section 4.2). A refund is out of scope, so a paid
+        booking keeps its `SUCCESS` payment (assumption A7).
+        """
+        with transaction(self._session):
+            booking = self._repository.lock_owned(booking_id, user_id)
+            if booking is None:
+                raise owner_error(
+                    exists=self._repository.exists(booking_id),
+                    not_found=BookingNotFound("No booking has this ID."),
+                )
+            if booking.status is not BookingStatus.CANCELLED:
+                transition(booking.status, BookingStatus.CANCELLED)  # a FAILED booking stops here
+                if self._repository.has_pending_payment(booking.id):
+                    raise PaymentInProgress("A payment for this booking is still pending.")
+                booking.status = BookingStatus.CANCELLED
+            self._repository.attach_names(booking)
         return booking

@@ -10,7 +10,13 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.db import connection_options, create_db_engine, domain_errors, get_session
+from app.core.db import (
+    connection_options,
+    create_db_engine,
+    domain_errors,
+    get_session,
+    transaction,
+)
 from app.core.errors import DuplicateCentre, DuplicateDiagnosticTest
 
 
@@ -82,6 +88,9 @@ class RecordingSession:
     def rollback(self) -> None:
         self.calls.append("rollback")
 
+    def commit(self) -> None:
+        self.calls.append("commit")
+
 
 def integrity_error(constraint: str | None) -> IntegrityError:
     diag = SimpleNamespace(constraint_name=constraint)
@@ -130,3 +139,34 @@ def test_other_errors_and_a_clean_block_pass_through_without_a_rollback() -> Non
     with pytest.raises(OperationalError), domain_errors(cast(Session, session), {}):
         raise OperationalError("SELECT 1", {}, cast(BaseException, RuntimeError("down")))
     assert session.calls == []
+
+
+# ==== transaction: commit when the block ends, roll back when it raises
+
+
+def test_a_finished_block_commits_once() -> None:
+    session = RecordingSession()
+    with transaction(cast(Session, session)):
+        session.calls.append("work")
+    assert session.calls == ["work", "commit"]
+
+
+def test_a_failed_block_rolls_back_and_raises_the_same_error() -> None:
+    session = RecordingSession()
+    failure = RuntimeError("the use case failed")
+    with pytest.raises(RuntimeError) as raised, transaction(cast(Session, session)):
+        raise failure
+    assert raised.value is failure
+    assert session.calls == ["rollback"]  # no commit
+
+
+def test_a_commit_that_fails_is_rolled_back_too() -> None:
+    class FailingCommit(RecordingSession):
+        def commit(self) -> None:
+            self.calls.append("commit")
+            raise OperationalError("COMMIT", {}, cast(BaseException, RuntimeError("down")))
+
+    session = FailingCommit()
+    with pytest.raises(OperationalError), transaction(cast(Session, session)):
+        pass
+    assert session.calls == ["commit", "rollback"]

@@ -1,8 +1,10 @@
-"""The bookings over HTTP: create (T3.3). List, read and cancel follow in T3.4.
+"""The bookings over HTTP: create, list, read and cancel.
 
-Covers AB1, AB7 and AB29 of the spec.
+Covers AB1, AB3, AB7, AB27 and AB29 of the spec.
 """
 
+import threading
+import time
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -13,17 +15,20 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from httpx2 import Response
-from sqlalchemy import func, select
+from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from app.models.booking import Booking, BookingStatus
 from app.models.catalog import CentreTest
+from app.models.payment import PaymentStatus
 from tests.factories import (
     future_slot,
     make_booking,
     make_centre,
     make_centre_test,
     make_diagnostic_test,
+    make_payment,
+    make_user,
 )
 from tests.support import AUTH_LOOKUP, QueryCounter, run_concurrently
 
@@ -321,3 +326,333 @@ def test_a_booking_takes_three_statements_after_the_authentication_lookup(
         response = post_booking(client, patient_headers, offering)
     assert response.status_code == 201
     assert counter.count == 3, counter.statements
+
+
+# ==== Location (T3.4)
+
+
+def test_a_new_booking_answers_with_a_location_that_leads_to_it(
+    client: TestClient, patient_headers: Headers, db_session: Session
+) -> None:
+    created = post_booking(client, patient_headers, make_centre_test(db_session))
+    location = created.headers["location"]
+    assert location == f"/bookings/{created.json()['id']}"
+    assert client.get(location, headers=patient_headers).json()["id"] == created.json()["id"]
+
+
+def test_the_location_is_a_path_and_ignores_a_hostile_host_header(
+    client: TestClient, patient_headers: Headers, db_session: Session
+) -> None:
+    offering = make_centre_test(db_session)
+    body = {
+        "centre_id": str(offering.centre_id),
+        "test_id": str(offering.test_id),
+        "appointment_at": iso(future_slot()),
+    }
+    response = client.post(
+        "/bookings/", json=body, headers={**patient_headers, "Host": "evil.example"}
+    )
+    assert response.headers["location"].startswith("/bookings/")
+    assert "evil.example" not in response.headers["location"]
+
+
+# ==== list
+
+
+def test_the_list_needs_a_token(client: TestClient) -> None:
+    response = client.get("/bookings/")
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
+def test_an_empty_list_is_a_page_with_a_zero_total(
+    client: TestClient, patient_headers: Headers
+) -> None:
+    body = client.get("/bookings/", headers=patient_headers).json()
+    assert body == {"data": [], "pagination": {"total": 0, "limit": 20, "offset": 0}}
+
+
+def test_the_list_holds_only_my_bookings_newest_first(
+    client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
+) -> None:
+    offering = make_centre_test(db_session)
+    older = make_booking(db_session, user=patient, offering=offering, appointment_at=future_slot(3))
+    newer = make_booking(db_session, user=patient, offering=offering, appointment_at=future_slot(4))
+    make_booking(db_session, user=make_user(db_session), offering=offering)  # someone else's
+    body = client.get("/bookings/", headers=patient_headers).json()
+    assert [item["id"] for item in body["data"]] == [str(newer.id), str(older.id)]
+    assert body["pagination"] == {"total": 2, "limit": 20, "offset": 0}
+    assert {"centre", "test", "amount", "status"} <= set(body["data"][0])
+    assert "payments" not in body["data"][0]  # the list is the short form
+
+
+def test_the_list_pages(
+    client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
+) -> None:
+    offering = make_centre_test(db_session)
+    for day in range(5):
+        make_booking(
+            db_session, user=patient, offering=offering, appointment_at=future_slot(2 + day)
+        )
+    first = client.get("/bookings/", params={"limit": 2}, headers=patient_headers).json()
+    last = client.get(
+        "/bookings/", params={"limit": 2, "offset": 4}, headers=patient_headers
+    ).json()
+    assert len(first["data"]) == 2
+    assert len(last["data"]) == 1
+    assert first["pagination"] == {"total": 5, "limit": 2, "offset": 0}
+    assert last["pagination"] == {"total": 5, "limit": 2, "offset": 4}
+
+
+@pytest.mark.parametrize(
+    ("params", "field"),
+    [
+        ({"limit": 0}, "query.limit"),
+        ({"limit": 101}, "query.limit"),
+        ({"offset": -1}, "query.offset"),
+        ({"offset": 10001}, "query.offset"),
+    ],
+)
+def test_bad_paging_is_a_422_that_names_the_field(
+    client: TestClient, patient_headers: Headers, params: dict[str, int], field: str
+) -> None:
+    response = client.get("/bookings/", params=params, headers=patient_headers)
+    assert response.status_code == 422
+    assert [item["field"] for item in response.json()["errors"]] == [field]
+
+
+# ==== read one
+
+
+def test_a_booking_is_read_with_its_payments(
+    client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
+) -> None:
+    booking = make_booking(db_session, user=patient)
+    failed = make_payment(
+        db_session, booking=booking, status=PaymentStatus.FAILED, failure_reason="declined"
+    )
+    pending = make_payment(db_session, booking=booking, status=PaymentStatus.PENDING)
+    response = client.get(f"/bookings/{booking.id}", headers=patient_headers)
+    body = response.json()
+    assert response.status_code == 200
+    assert body["id"] == str(booking.id)
+    assert [payment["id"] for payment in body["payments"]] == [str(failed.id), str(pending.id)]
+    assert set(body["payments"][0]) == {
+        "id",
+        "amount",
+        "currency",
+        "status",
+        "failure_reason",
+        "settled_at",
+    }
+    assert body["payments"][0]["failure_reason"] == "declined"
+    assert body["payments"][0]["settled_at"].endswith("Z")
+    assert body["payments"][1]["settled_at"] is None
+
+
+def test_a_booking_without_payments_has_an_empty_list(
+    client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
+) -> None:
+    booking = make_booking(db_session, user=patient)
+    assert client.get(f"/bookings/{booking.id}", headers=patient_headers).json()["payments"] == []
+
+
+def test_someone_elses_booking_is_403_and_an_unknown_one_is_404(
+    client: TestClient, patient_headers: Headers, db_session: Session
+) -> None:
+    others = make_booking(db_session, user=make_user(db_session))
+    forbidden = client.get(f"/bookings/{others.id}", headers=patient_headers)
+    unknown = client.get(f"/bookings/{uuid.uuid4()}", headers=patient_headers)
+    assert (forbidden.status_code, forbidden.json()["code"]) == (403, "FORBIDDEN")
+    assert (unknown.status_code, unknown.json()["code"]) == (404, "BOOKING_NOT_FOUND")
+
+
+def test_an_admin_does_not_see_other_peoples_bookings_either(
+    client: TestClient, admin_headers: Headers, db_session: Session
+) -> None:
+    booking = make_booking(db_session, user=make_user(db_session))
+    assert client.get(f"/bookings/{booking.id}", headers=admin_headers).status_code == 403
+
+
+def test_reading_needs_a_token_and_a_well_formed_id(
+    client: TestClient, patient_headers: Headers
+) -> None:
+    assert client.get(f"/bookings/{uuid.uuid4()}").status_code == 401
+    assert client.get("/bookings/not-a-uuid", headers=patient_headers).status_code == 422
+
+
+# ==== cancel
+
+
+def cancel_url(booking: Booking) -> str:
+    return f"/bookings/{booking.id}/cancel"
+
+
+@pytest.mark.parametrize("before", [BookingStatus.PENDING, BookingStatus.CONFIRMED])
+def test_a_pending_or_confirmed_booking_is_cancelled(
+    client: TestClient,
+    patient: Any,
+    patient_headers: Headers,
+    db_session: Session,
+    before: BookingStatus,
+) -> None:
+    booking = make_booking(db_session, user=patient, status=before)
+    response = client.post(cancel_url(booking), headers=patient_headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "CANCELLED"
+    assert response.json()["centre"]["name"]  # the response has the same shape as a read
+    db_session.expire_all()
+    assert db_session.get(Booking, booking.id).status is BookingStatus.CANCELLED  # type: ignore[union-attr]
+
+
+def test_a_second_cancel_is_200_and_changes_nothing(
+    client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
+) -> None:
+    booking = make_booking(db_session, user=patient)
+    first = client.post(cancel_url(booking), headers=patient_headers)
+    second = client.post(cancel_url(booking), headers=patient_headers)
+    assert (first.status_code, second.status_code) == (200, 200)
+    assert first.json() == second.json()
+
+
+def test_a_failed_booking_cannot_be_cancelled(
+    client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
+) -> None:
+    booking = make_booking(db_session, user=patient, status=BookingStatus.FAILED)
+    response = client.post(cancel_url(booking), headers=patient_headers)
+    assert (response.status_code, response.json()["code"]) == (409, "INVALID_BOOKING_STATUS")
+
+
+def test_a_live_pending_payment_blocks_the_cancel(
+    client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
+) -> None:
+    booking = make_booking(db_session, user=patient)
+    make_payment(db_session, booking=booking, status=PaymentStatus.PENDING)
+    response = client.post(cancel_url(booking), headers=patient_headers)
+    assert (response.status_code, response.json()["code"]) == (409, "PAYMENT_IN_PROGRESS")
+    db_session.expire_all()
+    assert db_session.get(Booking, booking.id).status is BookingStatus.PENDING  # type: ignore[union-attr]
+
+
+def test_user_b_cannot_cancel_user_as_booking(
+    client: TestClient, patient_headers: Headers, db_session: Session
+) -> None:
+    """AB3."""
+    booking = make_booking(db_session, user=make_user(db_session))
+    response = client.post(cancel_url(booking), headers=patient_headers)
+    assert (response.status_code, response.json()["code"]) == (403, "FORBIDDEN")
+    db_session.expire_all()
+    assert db_session.get(Booking, booking.id).status is BookingStatus.PENDING  # type: ignore[union-attr]
+
+
+def test_cancelling_an_unknown_or_malformed_id_and_without_a_token(
+    client: TestClient, patient_headers: Headers
+) -> None:
+    unknown = client.post(f"/bookings/{uuid.uuid4()}/cancel", headers=patient_headers)
+    assert (unknown.status_code, unknown.json()["code"]) == (404, "BOOKING_NOT_FOUND")
+    assert client.post("/bookings/nope/cancel", headers=patient_headers).status_code == 422
+    assert client.post(f"/bookings/{uuid.uuid4()}/cancel").status_code == 401
+
+
+def test_cancel_is_not_a_patch_a_client_cannot_write_a_status(
+    client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
+) -> None:
+    booking = make_booking(db_session, user=patient)
+    response = client.patch(
+        f"/bookings/{booking.id}", json={"status": "CONFIRMED"}, headers=patient_headers
+    )
+    assert response.status_code == 405
+    assert "PATCH" not in response.headers["allow"]
+
+
+# ==== the row lock (spec section 4.2)
+
+
+def test_a_stranger_is_told_403_at_once_while_the_owner_holds_the_row_lock(
+    client: TestClient, db_engine: Engine, patient_headers: Headers, db_session: Session
+) -> None:
+    """AB27: the owner predicate is in the lock query, so a stranger never waits behind the owner.
+    Waiting would end in a 503 after the 2-second lock timeout."""
+    booking = make_booking(db_session, user=make_user(db_session))
+    with Session(db_engine) as owner_transaction:
+        owner_transaction.execute(
+            select(Booking.id).where(Booking.id == booking.id).with_for_update(key_share=True)
+        )
+        started = time.perf_counter()
+        response = client.post(cancel_url(booking), headers=patient_headers)
+        elapsed = time.perf_counter() - started
+    assert response.status_code == 403
+    assert elapsed < 1.0
+
+
+def test_the_owner_waits_for_the_row_lock_and_then_cancels(
+    client: TestClient,
+    db_engine: Engine,
+    patient: Any,
+    patient_headers: Headers,
+    db_session: Session,
+) -> None:
+    booking = make_booking(db_session, user=patient)
+    answers: list[Response] = []
+    with Session(db_engine) as holder:
+        holder.execute(
+            select(Booking.id).where(Booking.id == booking.id).with_for_update(key_share=True)
+        )
+        caller = threading.Thread(
+            target=lambda: answers.append(client.post(cancel_url(booking), headers=patient_headers))
+        )
+        started = time.perf_counter()
+        caller.start()
+        time.sleep(0.3)  # the request is now waiting for the row
+        assert answers == []
+        holder.rollback()  # release the lock
+        caller.join(timeout=5)
+    assert [response.status_code for response in answers] == [200]
+    assert time.perf_counter() - started >= 0.3
+
+
+@pytest.mark.concurrency
+def test_ten_cancels_at_once_all_answer_200_and_the_booking_ends_cancelled(
+    client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
+) -> None:
+    booking = make_booking(db_session, user=patient)
+    calls = [
+        lambda: client.post(cancel_url(booking), headers=patient_headers).status_code
+        for _ in range(10)
+    ]
+    assert run_concurrently(calls) == [200] * 10
+    db_session.expire_all()
+    assert db_session.get(Booking, booking.id).status is BookingStatus.CANCELLED  # type: ignore[union-attr]
+
+
+# ==== statement budgets (spec section 7.2)
+
+
+def test_the_statement_budgets_hold_over_http(
+    app: FastAPI,
+    client: TestClient,
+    patient: Any,
+    patient_headers: Headers,
+    db_session: Session,
+) -> None:
+    booking = make_booking(db_session, user=patient)
+    make_payment(db_session, booking=booking, status=PaymentStatus.FAILED)
+    stranger_booking = make_booking(db_session, user=make_user(db_session))
+    checks = [
+        ("GET", "/bookings/", 2),
+        ("GET", f"/bookings/{booking.id}", 1),
+        ("POST", cancel_url(booking), 4),  # lock, pending payment, UPDATE, names
+        ("POST", cancel_url(booking), 2),  # a repeat: lock, names
+    ]
+    with QueryCounter(app.state.engine, ignore=(AUTH_LOOKUP,)) as counter:
+        for method, path, budget in checks:
+            counter.statements.clear()
+            response = client.request(method, path, headers=patient_headers)
+            assert response.status_code == 200, (method, path, response.text)
+            assert counter.count == budget, (method, path, counter.count, counter.statements)
+        counter.statements.clear()  # an error path that tells 403 from 404 runs one more
+        assert (
+            client.get(f"/bookings/{stranger_booking.id}", headers=patient_headers).status_code
+            == 403
+        )
+        assert counter.count == 2

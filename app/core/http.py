@@ -10,6 +10,7 @@ import time
 import uuid
 
 import structlog
+from fastapi import Request, Response
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -17,6 +18,12 @@ NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9-]{8,64}")
 
 log = structlog.get_logger()
+
+
+def located(request: Request, response: Response, route_name: str, **path_params: object) -> None:
+    """Set `Location` to a path. `url_path_for` returns no host, so a hostile Host header cannot
+    reach it, and a later `/v1` prefix needs no change here (sharp edge 47)."""
+    response.headers["Location"] = str(request.app.url_path_for(route_name, **path_params))
 
 
 class RequestIdMiddleware:

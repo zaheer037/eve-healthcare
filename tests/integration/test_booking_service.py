@@ -1,5 +1,6 @@
 """BookingService on a real database: create, with the window, the cap and the duplicate guard."""
 
+import contextlib
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta, timezone
@@ -14,15 +15,23 @@ from app.core.config import Settings
 from app.core.errors import (
     AppointmentOutOfWindow,
     BookingLimitReached,
+    BookingNotFound,
     CentreTestNotFound,
     DuplicateBooking,
+    Forbidden,
+    InvalidBookingStatus,
+    PaymentInProgress,
 )
+from app.core.pagination import PageParams
 from app.models.booking import Booking, BookingStatus
+from app.models.payment import PaymentStatus
 from tests.factories import (
+    future_slot,
     make_booking,
     make_centre,
     make_centre_test,
     make_diagnostic_test,
+    make_payment,
     make_user,
 )
 from tests.support import QueryCounter
@@ -294,3 +303,259 @@ def test_a_booking_takes_three_statements(
         book(service, user.id, offering.centre_id, offering.test_id, FIXED_NOW + timedelta(days=3))
     counter.assert_at_most(3)
     assert counter.count == 3
+
+
+# ==== list and read (T3.4)
+
+
+def own_bookings(service: BookingService, user_id: uuid.UUID, **page: int) -> list[Booking]:
+    return service.list_own(user_id, PageParams(**page))[0]
+
+
+def test_the_list_holds_only_my_bookings_newest_first(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    me, other = make_user(db_session), make_user(db_session)
+    offering = make_centre_test(db_session)
+    first = make_booking(db_session, user=me, offering=offering, appointment_at=future_slot(3))
+    second = make_booking(db_session, user=me, offering=offering, appointment_at=future_slot(4))
+    make_booking(db_session, user=other, offering=offering, appointment_at=future_slot(5))
+    listed, total = make_service().list_own(me.id, PageParams())
+    assert [booking.id for booking in listed] == [second.id, first.id]
+    assert total == 2
+
+
+def test_bookings_made_in_one_transaction_are_ordered_by_id_so_a_page_never_repeats(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    """One transaction gives every row the same `created_at`, so the id breaks the tie."""
+    user = make_user(db_session)
+    offering = make_centre_test(db_session)
+    db_session.add_all(
+        Booking(
+            user_id=user.id,
+            centre_id=offering.centre_id,
+            test_id=offering.test_id,
+            appointment_at=future_slot(2 + day),
+            amount=Decimal("10"),
+            currency="INR",
+        )
+        for day in range(6)
+    )
+    db_session.commit()
+    service = make_service()
+    seen = [
+        b.id for offset in (0, 2, 4) for b in own_bookings(service, user.id, limit=2, offset=offset)
+    ]
+    assert len(seen) == len(set(seen)) == 6
+    assert seen == sorted(seen, reverse=True)
+
+
+def test_a_page_past_the_end_is_empty_and_the_total_is_still_reported(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    user = make_user(db_session)
+    make_booking(db_session, user=user)
+    assert make_service().list_own(user.id, PageParams(limit=10, offset=50)) == ([], 1)
+
+
+def test_a_listed_booking_shows_its_names_without_more_sql(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    user = make_user(db_session)
+    make_booking(db_session, user=user)
+    (booking,) = own_bookings(make_service(), user.id)
+    assert booking.centre.name  # the relationships are `raise_on_sql`, so this proves they loaded
+    assert booking.test.name
+
+
+def test_get_own_returns_the_booking_with_its_payments_oldest_first(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    user = make_user(db_session)
+    booking = make_booking(db_session, user=user)
+    failed = make_payment(db_session, booking=booking, status=PaymentStatus.FAILED)
+    success = make_payment(db_session, booking=booking, status=PaymentStatus.SUCCESS)
+    found = make_service().get_own(user.id, booking.id)
+    assert found.id == booking.id
+    assert [payment.id for payment in found.payments] == [failed.id, success.id]
+    assert found.centre.name
+    assert found.test.name
+
+
+def test_get_own_of_a_booking_without_payments_has_an_empty_list(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    user = make_user(db_session)
+    booking = make_booking(db_session, user=user)
+    assert make_service().get_own(user.id, booking.id).payments == []
+
+
+def test_someone_elses_booking_is_forbidden_and_an_unknown_one_is_not_found(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    owner, stranger = make_user(db_session), make_user(db_session)
+    booking = make_booking(db_session, user=owner)
+    service = make_service()
+    with pytest.raises(Forbidden):
+        service.get_own(stranger.id, booking.id)
+    with pytest.raises(BookingNotFound):
+        service.get_own(stranger.id, uuid.uuid4())
+
+
+def test_the_reads_take_two_one_and_two_statements(
+    db_engine: Engine, db_session: Session, make_service: ServiceFactory
+) -> None:
+    owner, stranger = make_user(db_session), make_user(db_session)
+    booking = make_booking(db_session, user=owner)
+    make_payment(db_session, booking=booking)
+    service = make_service()
+
+    def used(action: Callable[[], object]) -> int:
+        with QueryCounter(db_engine) as counter, contextlib.suppress(Forbidden):
+            action()
+        return counter.count
+
+    assert used(lambda: service.list_own(owner.id, PageParams())) == 2  # the count, the page
+    assert used(lambda: service.get_own(owner.id, booking.id)) == 1  # booking, names, payments
+    assert used(lambda: service.get_own(stranger.id, booking.id)) == 2  # then the existence read
+
+
+# ==== cancel (T3.4)
+
+
+def cancel(service: BookingService, user: object, booking: Booking) -> Booking:
+    return service.cancel(user_id=user.id, booking_id=booking.id)  # type: ignore[attr-defined]
+
+
+def status_of(session: Session, booking: Booking) -> BookingStatus:
+    session.expire_all()
+    stored = session.scalar(select(Booking.status).where(Booking.id == booking.id))
+    assert stored is not None
+    return stored
+
+
+@pytest.mark.parametrize("before", [BookingStatus.PENDING, BookingStatus.CONFIRMED])
+def test_a_pending_or_confirmed_booking_can_be_cancelled(
+    db_session: Session, make_service: ServiceFactory, before: BookingStatus
+) -> None:
+    user = make_user(db_session)
+    booking = make_booking(db_session, user=user, status=before)
+    cancelled = cancel(make_service(), user, booking)
+    assert cancelled.status is BookingStatus.CANCELLED
+    assert cancelled.centre.name  # loaded for the response
+    assert status_of(db_session, booking) is BookingStatus.CANCELLED
+
+
+def test_a_second_cancel_changes_nothing_and_writes_nothing(
+    db_engine: Engine, db_session: Session, make_service: ServiceFactory
+) -> None:
+    user = make_user(db_session)
+    booking = make_booking(db_session, user=user)
+    service = make_service()
+    cancel(service, user, booking)
+    updated_at = db_session.scalar(select(Booking.updated_at).where(Booking.id == booking.id))
+    with QueryCounter(db_engine) as counter:
+        again = cancel(service, user, booking)
+    assert again.status is BookingStatus.CANCELLED
+    assert not any(
+        statement.lstrip().upper().startswith("UPDATE") for statement in counter.statements
+    )
+    db_session.expire_all()
+    assert (
+        db_session.scalar(select(Booking.updated_at).where(Booking.id == booking.id)) == updated_at
+    )
+
+
+def test_a_failed_booking_cannot_be_cancelled(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    user = make_user(db_session)
+    booking = make_booking(db_session, user=user, status=BookingStatus.FAILED)
+    with pytest.raises(InvalidBookingStatus):
+        cancel(make_service(), user, booking)
+    assert status_of(db_session, booking) is BookingStatus.FAILED
+
+
+def test_a_booking_with_a_live_pending_payment_cannot_be_cancelled(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    user = make_user(db_session)
+    booking = make_booking(db_session, user=user)
+    make_payment(db_session, booking=booking, status=PaymentStatus.PENDING)
+    with pytest.raises(PaymentInProgress):
+        cancel(make_service(), user, booking)
+    assert status_of(db_session, booking) is BookingStatus.PENDING
+
+
+def test_a_confirmed_booking_keeps_its_successful_payment_when_it_is_cancelled(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    """Assumption A7: a refund is out of scope, so the payment stays as it was."""
+    user = make_user(db_session)
+    booking = make_booking(db_session, user=user, status=BookingStatus.CONFIRMED)
+    payment = make_payment(db_session, booking=booking, status=PaymentStatus.SUCCESS)
+    cancel(make_service(), user, booking)
+    db_session.expire_all()
+    assert db_session.get(type(payment), payment.id).status is PaymentStatus.SUCCESS  # type: ignore[union-attr]
+
+
+def test_a_failed_payment_does_not_block_a_cancel(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    user = make_user(db_session)
+    booking = make_booking(db_session, user=user)
+    make_payment(db_session, booking=booking, status=PaymentStatus.FAILED)
+    assert cancel(make_service(), user, booking).status is BookingStatus.CANCELLED
+
+
+def test_someone_elses_booking_cannot_be_cancelled_and_stays_as_it_was(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    owner, stranger = make_user(db_session), make_user(db_session)
+    booking = make_booking(db_session, user=owner)
+    with pytest.raises(Forbidden):
+        cancel(make_service(), stranger, booking)
+    assert status_of(db_session, booking) is BookingStatus.PENDING
+
+
+def test_an_unknown_booking_cannot_be_cancelled(
+    db_session: Session, make_service: ServiceFactory
+) -> None:
+    with pytest.raises(BookingNotFound):
+        make_service().cancel(user_id=make_user(db_session).id, booking_id=uuid.uuid4())
+
+
+@pytest.mark.parametrize("outcome", ["cancelled", "no-op", "refused", "forbidden", "unknown"])
+def test_every_way_out_of_a_cancel_ends_the_transaction_and_frees_the_lock(
+    db_engine: Engine, db_session: Session, make_service: ServiceFactory, outcome: str
+) -> None:
+    """A lock must never outlive the call: FastAPI serialises the response after it returns."""
+    user, stranger = make_user(db_session), make_user(db_session)
+    status = BookingStatus.FAILED if outcome == "refused" else BookingStatus.PENDING
+    booking = make_booking(db_session, user=user, status=status)
+    if outcome == "no-op":
+        db_session.execute(text("UPDATE bookings SET status = 'CANCELLED'"))
+        db_session.commit()
+    service = make_service()
+    caller = stranger if outcome == "forbidden" else user
+    target = uuid.uuid4() if outcome == "unknown" else booking.id
+    with contextlib.suppress(Forbidden, BookingNotFound, InvalidBookingStatus):
+        service.cancel(user_id=caller.id, booking_id=target)
+    with Session(db_engine) as prober:  # NOWAIT fails at once when the row is still locked
+        prober.execute(
+            select(Booking.id).where(Booking.id == booking.id).with_for_update(nowait=True)
+        )
+    assert service._session.in_transaction() is False
+
+
+def test_a_cancel_takes_four_statements(
+    db_engine: Engine, db_session: Session, make_service: ServiceFactory
+) -> None:
+    """The lock, the check for a pending payment, the UPDATE and the names for the response."""
+    user = make_user(db_session)
+    booking = make_booking(db_session, user=user)
+    service = make_service()
+    with QueryCounter(db_engine) as counter:
+        cancel(service, user, booking)
+    assert counter.count == 4, counter.statements
