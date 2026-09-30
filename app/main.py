@@ -8,6 +8,7 @@ import structlog
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
+from app.auth.router import auth_router, users_router
 from app.core import health
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.config import Settings, get_settings
@@ -57,6 +58,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     install_exception_handlers(app)
     app.include_router(health.router)
+    app.include_router(auth_router)
+    app.include_router(users_router)
 
     # Starlette wraps in reverse order, so the last middleware added runs first. The order,
     # outermost first: request ID, access event, no-store headers, CORS, body limit. The access

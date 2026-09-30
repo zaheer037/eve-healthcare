@@ -4,10 +4,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Form, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.security import OAuth2PasswordBearer
+from pydantic import SecretStr
 
 from app.auth.repository import UserRepository
+from app.auth.schemas import LoginRequest, SignupRequest, TokenForm
 from app.core.config import Settings
 from app.core.db import SessionDep
 from app.core.errors import Forbidden, InvalidToken, NotAuthenticated
@@ -65,3 +68,49 @@ async def auth_gate(request: Request, email: str | None = None) -> AsyncIterator
     throttle.check(client_ip(request), email)
     with slots.slot():
         yield
+
+
+def check_password_length(password: SecretStr, minimum: int) -> None:
+    """Enforce PASSWORD_MIN_LENGTH. The schema cannot, because the minimum is a setting.
+
+    The error has the same shape as a schema error, so the client sees an ordinary 422.
+    """
+    if len(password.get_secret_value()) < minimum:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "string_too_short",
+                    "loc": ("body", "password"),
+                    "msg": f"String should have at least {minimum} characters",
+                    "ctx": {"min_length": minimum},
+                }
+            ]
+        )
+
+
+# The three gates share `auth_gate`. Each one returns the parsed input, so the handler does not
+# declare the body a second time. The slot is held until the handler returns (scope="function").
+
+
+async def signup_gate(request: Request, data: SignupRequest) -> AsyncIterator[SignupRequest]:
+    settings: Settings = request.app.state.settings
+    check_password_length(data.password, settings.password_min_length)
+    async with auth_gate(request):  # a signup counts against the IP limit only
+        yield data
+
+
+async def login_gate(request: Request, credentials: LoginRequest) -> AsyncIterator[LoginRequest]:
+    async with auth_gate(request, credentials.email):
+        yield credentials
+
+
+async def token_gate(
+    request: Request, form: Annotated[TokenForm, Form()]
+) -> AsyncIterator[TokenForm]:
+    async with auth_gate(request, form.username):
+        yield form
+
+
+SignupInput = Annotated[SignupRequest, Depends(signup_gate, scope="function")]
+LoginInput = Annotated[LoginRequest, Depends(login_gate, scope="function")]
+TokenInput = Annotated[TokenForm, Depends(token_gate, scope="function")]

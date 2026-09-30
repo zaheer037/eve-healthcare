@@ -1,6 +1,7 @@
 """Integration fixtures: a real PostgreSQL, the migrated schema, the app and its client."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack
 from typing import Any
 
 import pytest
@@ -73,6 +74,24 @@ def client(app: FastAPI) -> Iterator[TestClient]:
     # test, and the catch-all 500 handler can be tested (raise_server_exceptions=False).
     with TestClient(app, raise_server_exceptions=False) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def client_with(test_settings: Settings) -> Iterator[Callable[..., TestClient]]:
+    """Build a client for an app whose settings differ from the default test settings.
+
+    `client_with(auth_ip_limit_per_minute=3)` starts a new app with that limit. Every client
+    that a test builds is closed when the test ends.
+    """
+    stack = ExitStack()
+
+    def build(**overrides: Any) -> TestClient:
+        settings = test_settings.model_copy(update=overrides)
+        application = create_app(settings)
+        return stack.enter_context(TestClient(application, raise_server_exceptions=False))
+
+    yield build
+    stack.close()
 
 
 @pytest.fixture
