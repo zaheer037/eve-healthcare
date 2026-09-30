@@ -82,7 +82,7 @@ ignore = ["N818"]
 "app/*/router.py" = ["TID251"]
 "app/*/dependencies.py" = ["TID251"]
 "app/*/schemas.py" = ["TID251"]
-"tests/**" = ["TID251", "S101", "S105", "S106", "S311", "PLR2004"]
+"tests/**" = ["TID251", "S101", "S105", "S106", "S311", "PLR2004", "PLR0913"]
 "scripts/**" = ["T201"]
 "migrations/**" = ["E501"]
 
