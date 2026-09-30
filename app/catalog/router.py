@@ -17,6 +17,7 @@ from app.catalog.schemas import (
     CentreDetailRead,
     CentreRead,
     CentreTestRead,
+    CentreTestWrite,
     CentreUpdate,
     DiagnosticTestCreate,
     DiagnosticTestRead,
@@ -117,6 +118,32 @@ def update_centre(
 def deactivate_centre(centre_id: uuid.UUID, service: CatalogServiceDep) -> None:
     """A centre is never deleted, because bookings refer to it. A repeated call is not an error."""
     service.deactivate_centre(centre_id)
+
+
+@centres_admin.put(
+    "/{centre_id}/tests/{test_id}",
+    summary="Set the price of a test at a centre",
+    responses={201: {"model": CentreTestRead, "description": "The centre did not offer it yet."}},
+)
+def set_centre_test(
+    centre_id: uuid.UUID,
+    test_id: uuid.UUID,
+    data: CentreTestWrite,
+    service: CatalogServiceDep,
+    response: Response,
+) -> CentreTestRead:
+    """Send the whole value. The same body always gives the same state. `201` when the centre
+    did not offer the test yet and `200` when the call replaced its price."""
+    offered, created = service.set_centre_test(
+        centre_id=centre_id,
+        test_id=test_id,
+        price=data.price,
+        currency=data.currency,
+        is_available=data.is_available,
+    )
+    if created:
+        response.status_code = 201
+    return CentreTestRead.model_validate(offered)
 
 
 # ================================================================ diagnostic tests (public)

@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
-from app.catalog.repository import CentreFilters
+from app.catalog.repository import CentreFilters, OfferedTest
 from app.catalog.service import CatalogService
 from app.core.errors import (
     CentreNotFound,
@@ -17,7 +17,7 @@ from app.core.errors import (
     DuplicateDiagnosticTest,
 )
 from app.core.pagination import PageParams
-from app.models.catalog import Centre, DiagnosticTest
+from app.models.catalog import Centre, CentreTest, DiagnosticTest
 from tests.factories import make_centre, make_centre_test, make_diagnostic_test
 from tests.support import QueryCounter
 
@@ -373,6 +373,120 @@ def statements_of(db_engine: Engine, action: Callable[[CatalogService], object])
     with QueryCounter(db_engine) as counter, Session(db_engine, expire_on_commit=False) as session:
         action(CatalogService(session))
     return counter.count
+
+
+# ==== prices: one upsert statement (T2.4)
+
+
+def put_price(
+    service: CatalogService,
+    centre: Centre | uuid.UUID,
+    test: DiagnosticTest | uuid.UUID,
+    price: str = "499.00",
+    *,
+    currency: str = "INR",
+    is_available: bool = True,
+) -> tuple[OfferedTest, bool]:
+    return service.set_centre_test(
+        centre_id=centre if isinstance(centre, uuid.UUID) else centre.id,
+        test_id=test if isinstance(test, uuid.UUID) else test.id,
+        price=Decimal(price),
+        currency=currency,
+        is_available=is_available,
+    )
+
+
+def count_prices(session: Session) -> int:
+    return session.scalar(select(func.count()).select_from(CentreTest)) or 0
+
+
+def test_the_first_call_creates_the_price_and_the_second_updates_it(
+    db_session: Session, service: CatalogService
+) -> None:
+    centre = make_centre(db_session)
+    test = make_diagnostic_test(db_session, code="CBC", name="Complete Blood Count")
+    offered, created = put_price(service, centre, test, "499")
+    assert created is True
+    assert offered == OfferedTest(
+        test.id, "CBC", "Complete Blood Count", Decimal("499.00"), "INR", True
+    )
+    offered, created = put_price(
+        service, centre, test, "550.50", currency="USD", is_available=False
+    )
+    assert created is False
+    assert (offered.price, offered.currency, offered.is_available) == (
+        Decimal("550.50"),
+        "USD",
+        False,
+    )
+    assert count_prices(db_session) == 1
+
+
+def test_the_same_call_twice_leaves_the_same_state(
+    db_session: Session, service: CatalogService
+) -> None:
+    centre, test = make_centre(db_session), make_diagnostic_test(db_session)
+    first, _ = put_price(service, centre, test, "120")
+    second, created = put_price(service, centre, test, "120")
+    assert (first, created) == (second, False)
+    assert count_prices(db_session) == 1
+
+
+def test_an_update_moves_updated_at_and_keeps_created_at(
+    db_session: Session, service: CatalogService
+) -> None:
+    """The upsert bypasses the ORM `onupdate`, so it sets `updated_at` itself (sharp edge 36)."""
+    centre, test = make_centre(db_session), make_diagnostic_test(db_session)
+    put_price(service, centre, test, "100")
+    created_at, updated_at = db_session.execute(
+        select(CentreTest.created_at, CentreTest.updated_at)
+    ).one()
+    assert created_at == updated_at
+    put_price(service, centre, test, "200")
+    db_session.expire_all()
+    later_created_at, later_updated_at = db_session.execute(
+        select(CentreTest.created_at, CentreTest.updated_at)
+    ).one()
+    assert later_created_at == created_at
+    assert later_updated_at > updated_at
+
+
+def test_an_unknown_centre_or_test_is_not_found_and_the_session_stays_usable(
+    db_session: Session, service: CatalogService
+) -> None:
+    centre, test = make_centre(db_session), make_diagnostic_test(db_session)
+    with pytest.raises(CentreNotFound):
+        put_price(service, uuid.uuid4(), test)
+    with pytest.raises(DiagnosticTestNotFound):
+        put_price(service, centre, uuid.uuid4())
+    assert count_prices(db_session) == 0
+    assert put_price(service, centre, test)[1] is True  # after two rollbacks
+
+
+def test_a_price_can_be_set_while_the_centre_or_the_test_is_inactive(
+    db_session: Session, service: CatalogService
+) -> None:
+    """An admin can prepare a price before a restore. Bookings need both to be active."""
+    centre = make_centre(db_session, is_active=False)
+    test = make_diagnostic_test(db_session, is_active=False)
+    assert put_price(service, centre, test)[1] is True
+
+
+def test_the_upsert_is_one_statement_when_it_creates_and_when_it_updates(
+    db_session: Session, db_engine: Engine
+) -> None:
+    centre, test = make_centre(db_session), make_diagnostic_test(db_session)
+    assert statements_of(db_engine, lambda s: put_price(s, centre, test, "100")) == 1
+    assert statements_of(db_engine, lambda s: put_price(s, centre, test, "200")) == 1
+
+
+def test_a_refused_upsert_is_one_statement_too(
+    db_session: Session, db_engine: Engine, service: CatalogService
+) -> None:
+    test = make_diagnostic_test(db_session)
+    with QueryCounter(db_engine) as counter, pytest.raises(CentreNotFound):
+        put_price(service, uuid.uuid4(), test)
+    assert counter.count == 1  # no read first: the foreign key does the check
 
 
 def test_the_statement_budgets_hold(db_session: Session, db_engine: Engine) -> None:

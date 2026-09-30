@@ -14,9 +14,9 @@ from httpx2 import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.catalog import Centre, DiagnosticTest
+from app.models.catalog import Centre, CentreTest, DiagnosticTest
 from tests.factories import make_centre, make_centre_test, make_diagnostic_test
-from tests.support import AUTH_LOOKUP, QueryCounter
+from tests.support import AUTH_LOOKUP, QueryCounter, run_concurrently
 
 Headers = dict[str, str]
 
@@ -32,7 +32,19 @@ def post_test(client: TestClient, headers: Headers | None = None, **overrides: A
     return client.post("/tests/", json={**body, **overrides}, headers=headers)
 
 
-def count(db_session: Session, model: type[Centre] | type[DiagnosticTest]) -> int:
+def put_price(
+    client: TestClient,
+    centre_id: object,
+    test_id: object,
+    headers: Headers | None = None,
+    **body: Any,
+) -> Response:
+    return client.put(f"/centres/{centre_id}/tests/{test_id}", json=body, headers=headers)
+
+
+def count(
+    db_session: Session, model: type[Centre] | type[DiagnosticTest] | type[CentreTest]
+) -> int:
     return db_session.scalar(select(func.count()).select_from(model)) or 0
 
 
@@ -190,6 +202,7 @@ WRITES = [
     ("post", "/tests/", {"code": "ABC", "name": "x"}),
     ("patch", f"/tests/{uuid.uuid4()}", {"name": "x"}),
     ("delete", f"/tests/{uuid.uuid4()}", None),
+    ("put", f"/centres/{uuid.uuid4()}/tests/{uuid.uuid4()}", {"price": "10.00"}),
 ]
 
 
@@ -422,6 +435,145 @@ def test_a_test_patch_with_null_on_a_required_field_is_422(
         )
 
 
+# ==== admin: the price of a test at a centre (T2.4)
+
+
+def test_the_first_put_is_201_and_the_second_is_200(
+    client: TestClient, admin_headers: Headers, db_session: Session
+) -> None:
+    centre = make_centre(db_session)
+    test = make_diagnostic_test(db_session, code="CBC", name="Complete Blood Count")
+    created = put_price(client, centre.id, test.id, admin_headers, price="499")
+    assert created.status_code == 201
+    assert created.json() == {
+        "test_id": str(test.id),
+        "code": "CBC",
+        "name": "Complete Blood Count",
+        "price": "499.00",
+        "currency": "INR",
+        "is_available": True,
+    }
+    updated = put_price(client, centre.id, test.id, admin_headers, price="550.5", currency="USD")
+    assert updated.status_code == 200
+    assert (updated.json()["price"], updated.json()["currency"]) == ("550.50", "USD")
+    assert count(db_session, CentreTest) == 1
+
+
+def test_repeating_a_put_gives_the_same_answer(
+    client: TestClient, admin_headers: Headers, db_session: Session
+) -> None:
+    centre, test = make_centre(db_session), make_diagnostic_test(db_session)
+    put_price(client, centre.id, test.id, admin_headers, price="120", is_available=False)
+    again = [
+        put_price(client, centre.id, test.id, admin_headers, price="120", is_available=False)
+        for _ in range(2)
+    ]
+    assert [response.status_code for response in again] == [200, 200]
+    assert again[0].json() == again[1].json()
+    assert count(db_session, CentreTest) == 1
+
+
+def test_a_put_takes_the_currency_and_the_availability_from_their_defaults(
+    client: TestClient, admin_headers: Headers, db_session: Session
+) -> None:
+    centre, test = make_centre(db_session), make_diagnostic_test(db_session)
+    body = put_price(client, centre.id, test.id, admin_headers, price="80").json()
+    assert (body["currency"], body["is_available"]) == ("INR", True)
+
+
+@pytest.mark.parametrize("price", ["0.01", "99999999.99", "1", 1.5, 250])
+def test_the_price_bounds_themselves_are_accepted(
+    client: TestClient, admin_headers: Headers, db_session: Session, price: Any
+) -> None:
+    centre, test = make_centre(db_session), make_diagnostic_test(db_session)
+    assert put_price(client, centre.id, test.id, admin_headers, price=price).status_code == 201
+
+
+def test_a_price_shows_in_the_detail_and_in_the_filtered_list_until_it_is_withdrawn(
+    client: TestClient, admin_headers: Headers, db_session: Session
+) -> None:
+    centre = make_centre(db_session, name="Priced Lab")
+    test = make_diagnostic_test(db_session, code="LFT", name="Liver Function Test")
+    put_price(client, centre.id, test.id, admin_headers, price="650")
+    detail = client.get(f"/centres/{centre.id}").json()
+    assert [(item["code"], item["price"]) for item in detail["tests"]] == [("LFT", "650.00")]
+    listed = client.get("/centres/", params={"test_id": str(test.id)}).json()
+    assert [(item["name"], item["price"]) for item in listed["data"]] == [("Priced Lab", "650.00")]
+    put_price(client, centre.id, test.id, admin_headers, price="650", is_available=False)
+    assert client.get(f"/centres/{centre.id}").json()["tests"] == []
+    assert client.get("/centres/", params={"test_id": str(test.id)}).json()["data"] == []
+
+
+def test_a_put_for_an_unknown_centre_or_test_is_404_with_its_own_code(
+    client: TestClient, admin_headers: Headers, db_session: Session
+) -> None:
+    centre, test = make_centre(db_session), make_diagnostic_test(db_session)
+    no_centre = put_price(client, uuid.uuid4(), test.id, admin_headers, price="10")
+    no_test = put_price(client, centre.id, uuid.uuid4(), admin_headers, price="10")
+    assert (no_centre.status_code, no_centre.json()["code"]) == (404, "CENTRE_NOT_FOUND")
+    assert (no_test.status_code, no_test.json()["code"]) == (404, "DIAGNOSTIC_TEST_NOT_FOUND")
+    assert count(db_session, CentreTest) == 0
+
+
+def test_a_put_with_a_malformed_id_is_422(client: TestClient, admin_headers: Headers) -> None:
+    good = uuid.uuid4()
+    for centre_id, test_id in (("nope", good), (good, "nope")):
+        response = put_price(client, centre_id, test_id, admin_headers, price="10")
+        assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"price": None},
+        {"price": 0},
+        {"price": "0.00"},
+        {"price": "0.009"},
+        {"price": -5},
+        {"price": "100000000"},
+        {"price": "99999999.999"},
+        {"price": "10.005"},
+        {"price": "NaN"},
+        {"price": "Infinity"},
+        {"price": "abc"},
+        {"price": 10, "currency": "inr"},
+        {"price": 10, "currency": "INRR"},
+        {"price": 10, "currency": ""},
+        {"price": 10, "is_available": "maybe"},
+        {"price": 10, "unknown": 1},
+    ],
+)
+def test_an_invalid_price_body_is_a_422_and_stores_nothing(
+    client: TestClient,
+    admin_headers: Headers,
+    db_session: Session,
+    body: dict[str, Any],
+) -> None:
+    centre, test = make_centre(db_session), make_diagnostic_test(db_session)
+    response = put_price(client, centre.id, test.id, admin_headers, **body)
+    assert response.status_code == 422
+    assert count(db_session, CentreTest) == 0
+
+
+@pytest.mark.concurrency
+def test_a_race_of_puts_creates_the_price_once(
+    client: TestClient, admin_headers: Headers, db_session: Session
+) -> None:
+    """Exactly one of the racing calls inserts the row and answers 201. The rest update it."""
+    centre, test = make_centre(db_session), make_diagnostic_test(db_session)
+    calls = [
+        lambda price=price: (
+            put_price(  # type: ignore[misc]
+                client, centre.id, test.id, admin_headers, price=str(price)
+            ).status_code
+        )
+        for price in range(100, 108)
+    ]
+    assert sorted(run_concurrently(calls)) == [200] * 7 + [201]
+    assert count(db_session, CentreTest) == 1
+
+
 # ==== statement budgets (spec section 7.2)
 
 
@@ -429,7 +581,7 @@ def test_the_statement_budgets_hold_over_http(
     app: FastAPI, client: TestClient, admin_headers: Headers, db_session: Session
 ) -> None:
     centre = make_centre(db_session)
-    test = make_diagnostic_test(db_session)
+    test, other = make_diagnostic_test(db_session), make_diagnostic_test(db_session)
     make_centre_test(db_session, centre=centre, test=test)
     with QueryCounter(app.state.engine, ignore=(AUTH_LOOKUP,)) as counter:
         checks = [
@@ -439,6 +591,8 @@ def test_the_statement_budgets_hold_over_http(
             ("GET", f"/tests/{test.id}", None, 1),
             ("POST", "/centres/", {"name": "Budget Lab", "location": "1 Road"}, 1),
             ("PATCH", f"/centres/{centre.id}", {"name": "Renamed"}, 2),
+            ("PUT", f"/centres/{centre.id}/tests/{other.id}", {"price": "10.00"}, 1),
+            ("PUT", f"/centres/{centre.id}/tests/{other.id}", {"price": "20.00"}, 1),
             ("DELETE", f"/centres/{centre.id}", None, 1),
         ]
         for method, path, body, budget in checks:

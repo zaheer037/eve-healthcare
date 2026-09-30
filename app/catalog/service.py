@@ -1,7 +1,8 @@
 """Catalog use cases. The service owns the transaction and ends it before it returns."""
 
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any
 
@@ -26,19 +27,25 @@ class CatalogService:
         self._session = session
         self._repository = CatalogRepository(session)
 
-    def _commit(self, duplicates: Mapping[str, AppError]) -> None:
-        """Commit. A unique violation becomes the domain error that names it.
+    @contextmanager
+    def _domain_errors(self, by_constraint: Mapping[str, AppError]) -> Iterator[None]:
+        """Turn a violated constraint into the domain error that names it.
 
-        The rollback comes first, so the session stays usable (spec section 4.2).
+        The rollback comes first, so the session stays usable (spec section 4.2). A constraint
+        that is not in the mapping is a bug or an outage, so it is raised unchanged.
         """
         try:
-            self._session.commit()
+            yield
         except IntegrityError as error:
             self._session.rollback()
             constraint = violated_constraint(error)
-            if constraint is not None and constraint in duplicates:
-                raise duplicates[constraint] from error
+            if constraint is not None and constraint in by_constraint:
+                raise by_constraint[constraint] from error
             raise
+
+    def _commit(self, duplicates: Mapping[str, AppError]) -> None:
+        with self._domain_errors(duplicates):
+            self._session.commit()
 
     # ---------------------------------------------------------------- centres
 
@@ -78,6 +85,37 @@ class CatalogService:
         if not self._repository.deactivate_centre(centre_id):
             raise CentreNotFound("No centre has this ID.")
         self._session.commit()
+
+    # ---------------------------------------------------------------- prices
+
+    def set_centre_test(
+        self,
+        *,
+        centre_id: uuid.UUID,
+        test_id: uuid.UUID,
+        price: Decimal,
+        currency: str,
+        is_available: bool,
+    ) -> tuple[OfferedTest, bool]:
+        """Create or replace the price of a test at a centre. The flag says whether it is new.
+
+        One statement and no read first: the foreign keys check that the centre and the test
+        exist. The same call twice leaves the same state, so a client can retry it safely.
+        """
+        missing = {
+            "fk_centre_tests_centre_id": CentreNotFound("No centre has this ID."),
+            "fk_centre_tests_test_id": DiagnosticTestNotFound("No diagnostic test has this ID."),
+        }
+        with self._domain_errors(missing):
+            offered, created = self._repository.upsert_centre_test(
+                centre_id=centre_id,
+                test_id=test_id,
+                price=price,
+                currency=currency,
+                is_available=is_available,
+            )
+            self._session.commit()
+        return offered, created
 
     # ---------------------------------------------------------------- diagnostic tests
 

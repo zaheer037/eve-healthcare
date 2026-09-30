@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Select, func, null, or_, select, update
+from sqlalchemy import Boolean, Select, func, literal_column, null, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import QueryableAttribute, Session
 
 from app.core.pagination import PageParams
@@ -168,3 +169,72 @@ class CatalogRepository:
             .returning(DiagnosticTest.id)
         )
         return self._session.execute(stmt).first() is not None
+
+    # ---------------------------------------------------------------- prices
+
+    def upsert_centre_test(
+        self,
+        *,
+        centre_id: uuid.UUID,
+        test_id: uuid.UUID,
+        price: Decimal,
+        currency: str,
+        is_available: bool,
+    ) -> tuple[OfferedTest, bool]:
+        """Create or replace the price of a test at a centre, in ONE statement (spec section 7.2).
+
+        A CTE runs the upsert and the outer SELECT adds the test's code and name. `xmax` is 0 on a
+        row that this statement inserted and non-zero on one that it updated, so the same statement
+        also says which of the two happened. A missing centre or test violates a named foreign
+        key, and the service maps the name to a 404. An upsert skips the ORM's `onupdate`, so
+        `updated_at` is set here (sharp edge 36).
+        """
+        row = insert(CentreTest).values(
+            centre_id=centre_id,
+            test_id=test_id,
+            price=price,
+            currency=currency,
+            is_available=is_available,
+        )
+        upserted = (
+            row.on_conflict_do_update(
+                index_elements=[CentreTest.centre_id, CentreTest.test_id],
+                set_={
+                    "price": row.excluded.price,
+                    "currency": row.excluded.currency,
+                    "is_available": row.excluded.is_available,
+                    "updated_at": func.now(),
+                },
+            )
+            .returning(
+                CentreTest.test_id,
+                CentreTest.price,
+                CentreTest.currency,
+                CentreTest.is_available,
+                literal_column("(xmax = 0)", Boolean).label("inserted"),
+            )
+            .cte("upserted")
+        )
+        stmt = (
+            select(
+                upserted.c.test_id,
+                DiagnosticTest.code,
+                DiagnosticTest.name,
+                upserted.c.price,
+                upserted.c.currency,
+                upserted.c.is_available,
+                upserted.c.inserted,
+            )
+            .select_from(upserted)
+            .join(DiagnosticTest, DiagnosticTest.id == upserted.c.test_id)
+        )
+        result = self._session.execute(stmt).one()
+        offered = OfferedTest(
+            test_id=result.test_id,
+            code=result.code,
+            name=result.name,
+            price=result.price,
+            currency=result.currency,
+            is_available=result.is_available,
+        )
+        return offered, result.inserted
