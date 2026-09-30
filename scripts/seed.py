@@ -3,8 +3,9 @@
     uv run python -m scripts.seed      # on a laptop, or `make seed`
     python -m scripts.seed             # in the container, after `alembic upgrade head`
 
-The run inserts what is missing, matched by natural key, and never changes a row that exists. An
-edit that an admin made therefore survives the next run.
+The sample catalog goes in only while the catalog is empty, and the run never changes a row that
+exists. An admin who renames, reprices or deactivates a sample row therefore finds it as it was left
+after every later start, and a catalog that somebody filled by hand is not touched.
 
     uv run python -m scripts.seed --scale 100000   # also 100,000 bookings, for load tests
 """
@@ -18,7 +19,7 @@ from decimal import Decimal
 
 import structlog
 from pydantic import ValidationError
-from sqlalchemy import literal_column, select, text
+from sqlalchemy import exists, literal_column, select, text
 from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.orm import Session
 
@@ -105,10 +106,18 @@ def count_inserted(session: Session, stmt: Insert) -> int:
     return len(session.execute(stmt.returning(literal_column("1"))).all())
 
 
+def catalog_is_empty(session: Session) -> bool:
+    """No test and no centre yet. A catalog with rows is somebody's, so the seed leaves it."""
+    has_tests = session.scalar(select(exists(select(DiagnosticTest.id))))
+    has_centres = session.scalar(select(exists(select(Centre.id))))
+    return not (has_tests or has_centres)
+
+
 def insert_missing_tests(session: Session) -> int:
+    """No conflict target: a second run at the same moment, or a row under another key, skips the
+    sample and does not raise."""
     rows = [{"id": uuid.uuid4(), **asdict(test)} for test in TESTS]
-    stmt = insert(DiagnosticTest).values(rows)
-    stmt = stmt.on_conflict_do_nothing(index_elements=[DiagnosticTest.code])
+    stmt = insert(DiagnosticTest).values(rows).on_conflict_do_nothing()
     return count_inserted(session, stmt)
 
 
@@ -117,8 +126,7 @@ def insert_missing_centres(session: Session) -> int:
         {"id": uuid.uuid4(), "name": centre.name, "location": centre.location, "city": centre.city}
         for centre in CENTRES
     ]
-    stmt = insert(Centre).values(rows)
-    stmt = stmt.on_conflict_do_nothing(index_elements=[Centre.name, Centre.location])
+    stmt = insert(Centre).values(rows).on_conflict_do_nothing()
     return count_inserted(session, stmt)
 
 
@@ -153,15 +161,18 @@ def insert_missing_prices(session: Session) -> int:
 
 
 def seed(session: Session, settings: Settings) -> SeedReport:
-    """Insert what is missing, in one transaction. A refusal writes nothing.
+    """Create the admin, and the sample catalog if the catalog is empty. One transaction, and a
+    refusal writes nothing.
 
     The credentials are checked first, so a bad setting stops the run before the database is read.
     """
     email, password = admin_credentials(settings)
     admin_created = ensure_admin(session, email, password)
-    tests = insert_missing_tests(session)
-    centres = insert_missing_centres(session)
-    prices = insert_missing_prices(session)
+    tests = centres = prices = 0
+    if catalog_is_empty(session):
+        tests = insert_missing_tests(session)
+        centres = insert_missing_centres(session)
+        prices = insert_missing_prices(session)
     session.commit()
     return SeedReport(admin_created=admin_created, tests=tests, centres=centres, prices=prices)
 

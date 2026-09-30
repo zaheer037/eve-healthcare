@@ -184,34 +184,54 @@ def test_production_refuses_the_development_password_before_it_touches_the_datab
     assert count(db_session, Centre) == 0
 
 
-# ==== data that an admin created by hand first
+# ==== a catalog that already has rows is somebody's, and the seed leaves it alone
 
 
-def test_a_test_that_already_has_a_sample_code_is_reused_and_priced(
+def test_a_catalog_that_holds_a_test_is_left_alone(
     db_engine: Engine, db_session: Session, seed_settings: Settings
 ) -> None:
     mine = make_diagnostic_test(db_session, code="CBC", name="Full blood picture")
     report = run_seed(db_engine, seed_settings)
-    assert report.tests == 11  # CBC was there already
-    assert count(db_session, DiagnosticTest) == 12
-    priced = db_session.scalar(
-        select(func.count()).select_from(CentreTest).where(CentreTest.test_id == mine.id)
-    )
-    assert priced == sum("CBC" in centre.prices for centre in CENTRES)
+    assert report == SeedReport(admin_created=True, tests=0, centres=0, prices=0)
+    assert count(db_session, DiagnosticTest) == 1
+    assert (count(db_session, Centre), count_prices(db_session)) == (0, 0)
     assert db_session.get(DiagnosticTest, mine.id).name == "Full blood picture"  # type: ignore[union-attr]
 
 
-def test_a_centre_that_already_exists_is_reused_and_priced(
+def test_a_catalog_that_holds_a_centre_is_left_alone(
     db_engine: Engine, db_session: Session, seed_settings: Settings
 ) -> None:
     sample = CENTRES[0]
-    mine = make_centre(db_session, name=sample.name, location=sample.location, city="Elsewhere")
+    make_centre(db_session, name=sample.name, location=sample.location, city="Elsewhere")
     report = run_seed(db_engine, seed_settings)
-    assert report.centres == 4
-    priced = db_session.scalar(
-        select(func.count()).select_from(CentreTest).where(CentreTest.centre_id == mine.id)
-    )
-    assert priced == len(sample.prices)
+    assert (report.tests, report.centres, report.prices) == (0, 0, 0)
+    assert count(db_session, Centre) == 1
+    assert count(db_session, DiagnosticTest) == 0
+
+
+def test_a_renamed_sample_test_does_not_break_the_next_start(
+    db_engine: Engine, db_session: Session, seed_settings: Settings
+) -> None:
+    """An admin changed the code of CBC. The seed used to insert the sample again, hit the unique
+    name, and exit with an error, so `docker compose up` never started the API."""
+    run_seed(db_engine, seed_settings)
+    cbc = db_session.scalars(select(DiagnosticTest).where(DiagnosticTest.code == "CBC")).one()
+    cbc.code = "CBC2"
+    db_session.commit()
+    assert run_seed(db_engine, seed_settings) == NOTHING_NEW
+    assert count(db_session, DiagnosticTest) == len(TESTS)
+
+
+def test_a_renamed_sample_centre_does_not_come_back_as_a_duplicate(
+    db_engine: Engine, db_session: Session, seed_settings: Settings
+) -> None:
+    run_seed(db_engine, seed_settings)
+    centre = db_session.scalars(select(Centre).order_by(Centre.name)).first()
+    assert centre is not None
+    centre.name = "Renamed Diagnostics"
+    db_session.commit()
+    assert run_seed(db_engine, seed_settings) == NOTHING_NEW
+    assert count(db_session, Centre) == len(CENTRES)
 
 
 # ==== the command's exit code

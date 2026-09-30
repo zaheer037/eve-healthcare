@@ -39,6 +39,30 @@ def load(session: Session, bookings: int = SCALE) -> LoadReport:
     return report
 
 
+class CollidingRandom(random.Random):
+    """Draws the same offering and the same minute for its first `collisions` draws.
+
+    Every booking of a user then wants one slot, which the unique index on active bookings refuses.
+    `collisions=None` never stops.
+    """
+
+    def __init__(self, seed: int, collisions: int | None) -> None:
+        super().__init__(seed)
+        self._collisions = collisions
+
+    def _stuck(self) -> bool:
+        if self._collisions is None:
+            return True
+        self._collisions -= 1
+        return self._collisions >= 0
+
+    def choice(self, seq):  # type: ignore[no-untyped-def]
+        return seq[0] if self._stuck() else super().choice(seq)
+
+    def randint(self, a: int, b: int) -> int:
+        return a + 5 if self._stuck() else super().randint(a, b)
+
+
 def count(session: Session, model: type[Booking] | type[Payment] | type[User]) -> int:
     return session.scalar(select(func.count()).select_from(model)) or 0
 
@@ -190,3 +214,23 @@ def test_run_with_a_scale_seeds_first_and_then_loads(
     assert '"event": "seed.done"' in output
     assert '"event": "seed.load_done"' in output
     assert count(db_session, Booking) == SCALE
+
+
+# ==== a slot that two active bookings of one user would share is drawn again
+
+
+def test_two_draws_of_one_slot_for_one_user_are_redrawn_and_the_load_still_commits(
+    seeded: Session,
+) -> None:
+    """With an unseeded generator about 3 runs in 100 used to fail on the unique index."""
+    report = add_load(seeded, 20, now=NOW, rng=CollidingRandom(3, collisions=60))
+    seeded.commit()
+    assert report.bookings == 20
+    assert count(seeded, Booking) == 20
+
+
+def test_a_generator_that_can_never_find_a_free_slot_stops_with_a_clear_error(
+    seeded: Session,
+) -> None:
+    with pytest.raises(SeedError, match="free slot"):
+        add_load(seeded, 10, now=NOW, rng=CollidingRandom(3, collisions=None))
