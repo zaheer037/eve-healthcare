@@ -70,7 +70,7 @@ def statuses(operation: dict[str, Any]) -> set[int]:
 # ==== the inventory
 
 
-def test_the_documented_operations_are_exactly_the_24_endpoints_of_the_spec(
+def test_the_documented_operations_are_exactly_the_24_endpoints(
     schema: dict[str, Any],
 ) -> None:
     assert set(operations(schema)) == set(INVENTORY)
@@ -88,6 +88,47 @@ def test_every_operation_has_a_summary_and_a_unique_stable_operation_id(
         # A readable id from the function name, not one built from the path and the method.
         assert re.fullmatch(r"[a-z][a-z0-9_]*", operation["operationId"]), operation["operationId"]
         assert not operation["operationId"].endswith(("_get", "_post", "_put", "_patch", "_delete"))
+
+
+def unresolved_references(schema: dict[str, Any]) -> list[str]:
+    """Every `$ref` in the document that points at nothing in the document."""
+
+    def resolves(pointer: str) -> bool:
+        node: Any = schema
+        for part in pointer.removeprefix("#/").split("/"):
+            if not isinstance(node, dict) or part not in node:
+                return False
+            node = node[part]
+        return True
+
+    missing: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            reference = node.get("$ref")
+            if isinstance(reference, str) and not resolves(reference):
+                missing.append(reference)
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(schema)
+    return missing
+
+
+def test_every_reference_in_the_document_resolves(schema: dict[str, Any]) -> None:
+    """A dangling `$ref` breaks Swagger UI and every client generator."""
+    assert unresolved_references(schema) == []
+
+
+def test_the_webhook_body_is_documented_through_the_components(schema: dict[str, Any]) -> None:
+    """The route declares no body, so its schema is registered by hand, with the models under it."""
+    operation = schema["paths"]["/payments/webhook/"]["post"]
+    body = operation["requestBody"]["content"]["application/json"]["schema"]
+    assert body == {"$ref": "#/components/schemas/WebhookPayload"}
+    assert "WebhookPayload" in schema["components"]["schemas"]
 
 
 def test_every_operation_lists_its_success_statuses_its_errors_and_the_shared_four(

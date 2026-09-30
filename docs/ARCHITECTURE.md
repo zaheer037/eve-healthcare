@@ -834,7 +834,7 @@ Each card lists the exact steps of a critical endpoint. The **Tests** line names
   8. Run `settle()`. Mark the event with the outcome and set `payment_id`. Commit.
   9. A deadlock or a serialization failure (SQLSTATE 40P01 or 40001) runs steps 4 to 8 again, up to three attempts. So does a unique violation on `uq_payments_provider_ref`: a concurrent event took the same reference, and the second run records `REJECTED` (`provider_reference_conflict`). A lock timeout (55P03) returns `503` at once, and the provider retries. A `DataError` returns `422`. Other database errors return `503`.
 - **Response.** `200 {"status": "processed", "outcome": "...", "detail": ...}` or `200 {"status": "duplicate"}`.
-- **No body parameter.** The handler declares none. FastAPI therefore never parses the body, and a bad signature returns `401` even when the JSON is invalid. `openapi_extra` documents the body.
+- **No body parameter.** The handler declares none. FastAPI therefore never parses the body, and a bad signature returns `401` even when the JSON is invalid. `openapi_extra` documents the body, and `add_model_schemas` registers `WebhookPayload` in `components.schemas`, so every `$ref` in the document resolves (a test walks them all).
 - **Tests.** In §9.3 (webhook group).
 
 #### `PUT /centres/{centre_id}/tests/{test_id}`

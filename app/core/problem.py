@@ -70,16 +70,30 @@ def problems(*errors: type[AppError]) -> dict[int | str, dict[str, Any]]:
     }
 
 
+COMPONENT_REF = "#/components/schemas/{model}"
+
+
+def add_model_schemas(document: dict[str, Any], *models: type[BaseModel]) -> None:
+    """Register models, and the models under them, in `components.schemas` of an OpenAPI document.
+
+    FastAPI registers a model that a route declares. It does not register one that a route names
+    by hand, as `problems()` does, or one that a route reads from the raw request, as the webhook
+    does. A `$defs` block inside an operation points at a document root that does not exist.
+    """
+    schemas = document.setdefault("components", {}).setdefault("schemas", {})
+    for model in models:
+        schema = model.model_json_schema(ref_template=COMPONENT_REF)
+        definitions = schema.pop("$defs", {})
+        schemas.update({model.__name__: schema, **definitions})
+
+
 def add_problem_schemas(schema: dict[str, Any]) -> None:
     """Register `ProblemDetail` and the models under it in an OpenAPI document.
 
     A response that names its media type by hand, as `problems()` does, does not register the
     model, and FastAPI would only offer `application/json` for a `model=` entry.
     """
-    models = ProblemDetail.model_json_schema(ref_template="#/components/schemas/{model}")
-    definitions = models.pop("$defs", {})
-    schemas = schema.setdefault("components", {}).setdefault("schemas", {})
-    schemas.update({"ProblemDetail": models, **definitions})
+    add_model_schemas(schema, ProblemDetail)
 
 
 def request_id_of(scope: Scope) -> str | None:

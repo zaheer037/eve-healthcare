@@ -133,7 +133,7 @@ WEBHOOK_DOCS = {
         "required": True,
         "content": {
             "application/json": {
-                "schema": WebhookPayload.model_json_schema(mode="validation"),
+                "schema": {"$ref": "#/components/schemas/WebhookPayload"},  # see `create_app`
                 "example": {
                     "event_id": "evt_01J8ZQ4M3K7W",
                     "payment_id": "0d4b7a52-3f1e-4d0a-9b8c-2f6a1c7e9d10",

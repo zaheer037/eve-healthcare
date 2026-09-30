@@ -25,10 +25,16 @@ from app.core.http import (
     bind_request_id,
 )
 from app.core.logging import configure_logging
-from app.core.problem import add_problem_schemas, install_exception_handlers, problems
+from app.core.problem import (
+    add_model_schemas,
+    add_problem_schemas,
+    install_exception_handlers,
+    problems,
+)
 from app.core.security import HashSlots, dummy_hash
 from app.core.throttle import LoginThrottle
 from app.payments.router import router as payments_router
+from app.payments.schemas import WebhookPayload
 
 log = structlog.get_logger()
 
@@ -139,6 +145,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         schema = build_openapi()  # builds and caches the document
         if first_time:
             add_problem_schemas(schema)
+            add_model_schemas(schema, WebhookPayload)  # the webhook route declares no body
         return schema
 
     app.openapi = openapi_with_problems  # type: ignore[method-assign]
