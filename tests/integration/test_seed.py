@@ -13,7 +13,8 @@ from app.core.config import Environment, Settings
 from app.core.security import hash_password, verify_password
 from app.models.catalog import Centre, CentreTest, DiagnosticTest
 from app.models.user import Role, User
-from scripts.seed import SeedError, SeedReport, run, seed
+from scripts.errors import SeedError
+from scripts.seed import SeedReport, run, seed
 from scripts.seed_data import CENTRES, TESTS
 from tests.factories import make_centre, make_diagnostic_test, make_user
 

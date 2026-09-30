@@ -5,34 +5,38 @@
 
 The run inserts what is missing, matched by natural key, and never changes a row that exists. An
 edit that an admin made therefore survives the next run.
+
+    uv run python -m scripts.seed --scale 100000   # also 100,000 bookings, for load tests
 """
 
+import argparse
+import random
 import uuid
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from decimal import Decimal
 
 import structlog
 from pydantic import ValidationError
-from sqlalchemy import literal_column, select
+from sqlalchemy import literal_column, select, text
 from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.orm import Session
 
 from app.auth.schemas import LoginRequest
+from app.core.clock import utcnow
 from app.core.config import PLACEHOLDER_PREFIXES, Environment, Settings
 from app.core.db import create_db_engine
 from app.core.logging import configure_logging
 from app.core.security import hash_password
 from app.models.catalog import Centre, CentreTest, DiagnosticTest
 from app.models.user import Role, User
+from scripts.errors import SeedError
 from scripts.seed_data import CENTRES, TESTS
+from scripts.seed_load import add_load
 
 log = structlog.get_logger()
 
 ADMIN_FULL_NAME = "Administrator"
-
-
-class SeedError(Exception):
-    """The seed refuses to run. The message is safe to print: no secret and no email."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,24 +165,52 @@ def seed(session: Session, settings: Settings) -> SeedReport:
     return SeedReport(admin_created=admin_created, tests=tests, centres=centres, prices=prices)
 
 
-def run(settings: Settings) -> int:
-    """Seed the database that `settings` points at. Return the exit code."""
+def run(settings: Settings, *, scale: int = 0) -> int:
+    """Seed the database that `settings` points at. Return the exit code.
+
+    With `scale`, the run also adds that many bookings for load tests. The seed goes first, and it
+    commits, so the catalog exists before the load reads it.
+    """
     configure_logging(settings)
     engine = create_db_engine(settings)
     try:
+        if scale and settings.environment is Environment.PRODUCTION:
+            raise SeedError("--scale makes load-test data and is refused in production.")
         with Session(engine, expire_on_commit=False) as session:
             report = seed(session, settings)
+            log.info("seed.done", **asdict(report))
+            if scale:
+                loaded = add_load(session, scale, now=utcnow(), rng=random.Random())  # noqa: S311  # test data, not a secret
+                session.commit()
+                session.execute(text("ANALYZE users, bookings, payments"))  # fresh statistics
+                session.commit()
+                log.info("seed.load_done", **asdict(loaded))
     except SeedError as error:
         log.error("seed.refused", reason=str(error))
         return 1
     finally:
         engine.dispose()
-    log.info("seed.done", **asdict(report))
     return 0
 
 
-def main() -> int:
-    return run(Settings())
+def _count(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be 1 or more")
+    return number
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="python -m scripts.seed", description="Seed the admin and the sample catalog."
+    )
+    parser.add_argument(
+        "--scale",
+        type=_count,
+        default=0,
+        help="also add N bookings, for load tests (never in production)",
+    )
+    return run(Settings(), scale=parser.parse_args(argv).scale)
 
 
 if __name__ == "__main__":

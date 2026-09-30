@@ -5,7 +5,8 @@ from dataclasses import asdict
 import pytest
 
 from app.catalog.schemas import CentreCreate, CentreTestWrite, DiagnosticTestCreate
-from scripts.seed import SeedError, admin_credentials
+from scripts.errors import SeedError
+from scripts.seed import admin_credentials
 from scripts.seed_data import CENTRES, TESTS
 from tests.support import SettingsFactory
 
