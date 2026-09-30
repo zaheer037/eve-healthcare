@@ -53,7 +53,7 @@ def problem_without_the_request_id(response: Response) -> dict[str, Any]:
     return {key: value for key, value in response.json().items() if key != "request_id"}
 
 
-# ================================================================ signup
+# ==== signup
 
 
 def test_signup_creates_a_patient(client: TestClient, db_session: Session) -> None:
@@ -178,7 +178,7 @@ def test_two_simultaneous_signups_with_one_email_give_one_201_and_one_409(
     assert sorted(run_concurrently(calls)) == [201, 409]
 
 
-# ================================================================ login
+# ==== login
 
 
 @pytest.mark.parametrize("path", ["/auth/login", "/auth/token"])
@@ -288,7 +288,7 @@ def test_login_refuses_extra_fields(client: TestClient) -> None:
     assert response.status_code == 422
 
 
-# ================================================================ throttle (AB21, AB22, AB35)
+# ==== throttle (AB21, AB22, AB35)
 
 
 def test_the_eleventh_bad_login_for_one_account_is_429_with_retry_after(
@@ -411,7 +411,7 @@ def test_every_hashing_slot_taken_is_a_503_at_once(client_with: ClientFactory) -
     assert post_login(client, new_email()).status_code == 401  # the slot is free again
 
 
-# ================================================================ users/me
+# ==== users/me
 
 
 def test_me_returns_the_signed_in_user(client: TestClient, db_session: Session) -> None:
@@ -444,7 +444,7 @@ def test_me_runs_no_statement_beyond_the_authentication_lookup(
     assert counter.count == 0
 
 
-# ================================================================ documentation
+# ==== documentation
 
 
 def test_swagger_can_log_in_with_the_form_endpoint(client: TestClient) -> None:
