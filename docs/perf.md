@@ -1,11 +1,13 @@
 # Performance
 
-This page reports what I measured at 100,000 bookings, with one Uvicorn worker. Anyone can repeat
-it with the two commands at the end.
+This page reports what was measured at 100,000 bookings, with one Uvicorn worker. The steps at the
+end repeat it.
 
 ## Result
 
-Every endpoint answers with a p95 under 100 ms at 100,000 bookings. Every hot query runs in under
+Every endpoint answered with a p95 under 100 ms at 100,000 bookings. The figure is the median of
+three runs on a laptop with a load average between 3 and 5. Under a load average of 7, the read
+endpoints reached 91 to 148 ms, and the SQL times did not change. Every hot query runs in under
 0.2 ms and uses the index that the design names. No query reads `bookings`, `payments` or
 `webhook_events` with a sequential scan.
 
@@ -72,10 +74,9 @@ on the development machine, and `HASH_MAX_CONCURRENCY` (default 4) caps how many
 - **The database is not the cost.** A statement takes 0.01 to 0.16 ms. A request takes 20 to 60 ms.
   The rest is Python: the token check, the request validation, the hand-off to a worker thread and
   the JSON response. An index cannot make that faster. More workers can.
-- **The machine is shared.** I ran the tests on a laptop with 8 cores. Other containers ran
-  beside it, and the load average was between 3 and 5 during the three runs. One earlier run at a
-  load average of 7 showed p95 values of 91 to 148 ms for the reads, while the SQL times did not
-  change. Treat the p95 column as a range and not as a promise. The median of the p50 is steadier.
+- **The machine is shared.** The runs used a laptop with 8 cores that other containers used at the
+  same time. The load average was between 3 and 5 during the three runs. Treat the p95 column as a
+  range and not as a promise. The median of the p50 is steadier.
 - **The statement counts are tested.** A test asserts the query budget of every endpoint
   (`tests/integration/test_query_budgets.py`), so an accidental extra query fails a build long
   before it shows in a latency table.
@@ -87,18 +88,30 @@ on the development machine, and `HASH_MAX_CONCURRENCY` (default 4) caps how many
 - The `q` filter on centres uses `ILIKE` and reads the small catalog with a sequential scan. A
   catalog of many thousand centres needs a trigram index.
 - There is no cache. A measured need starts the caching work.
+- Every sync dependency costs one hand-off to a worker thread, and a list request makes several.
+  The pure ones (`page_params`, the service factories) could be `async def` and save those
+  hand-offs. Nothing measured says that it is worth the change yet.
 
 ## Repeat it
 
+Start from the steps in the README (`cp .env.example .env`, then `make db`). The commands use a
+scratch database, because the seed adds 100,000 bookings. Never point them at data that matters.
+
 ```bash
-# 1. Fill a scratch database. Never run this against data that matters.
-DATABASE_URL=postgresql+psycopg://eve:eve-dev-password@localhost:5432/eve_perf \
-  uv run python -m scripts.seed --scale 100000
+# 0. Make the scratch database and its tables on the PostgreSQL that `make db` started.
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec db createdb -U eve eve_perf
+export DATABASE_URL=postgresql+psycopg://eve:eve-dev-password@localhost:5432/eve_perf
+uv run alembic upgrade head
+
+# 1. Fill it, in about 17 seconds.
+uv run python -m scripts.seed --scale 100000
 
 # 2. The plans of the seven hot queries. The command exits with 1 on a sequential scan of a big table.
-DATABASE_URL=... uv run python -m scripts.perf_report explain
+uv run python -m scripts.perf_report explain
 
 # 3. The latency of five endpoints, with the API running on the same database.
-DATABASE_URL=... uv run fastapi run --port 8000 &
-DATABASE_URL=... uv run python -m scripts.perf_report latency --url http://127.0.0.1:8000
+uv run fastapi run --port 8000 &
+uv run python -m scripts.perf_report latency --url http://127.0.0.1:8000
 ```
+
+If port 5432 is busy, set `DB_PORT` for `make db` and use the same port in `DATABASE_URL`.

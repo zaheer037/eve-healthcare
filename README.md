@@ -31,6 +31,8 @@ Then open <http://localhost:8000/docs>. The stack starts PostgreSQL, applies the
 an admin and a sample catalog, and starts the API. It needs no `.env` file.
 
 - If port 8000 is busy, run `API_PORT=8080 docker compose up --build`.
+- The API listens on `127.0.0.1` only, because the stack runs with public passwords. To reach it
+  from another machine, use an SSH tunnel.
 - The seeded admin is `admin@example.com` with the password `dev-only-admin-password`. These are
   development values from the compose file. Never use them in production. The application refuses
   them, and every other placeholder secret, when `ENVIRONMENT=production`.
@@ -41,13 +43,16 @@ an admin and a sample catalog, and starts the API. It needs no `.env` file.
 You need Python 3.12 or newer and a PostgreSQL 17 database.
 
 ```bash
-uv sync                          # or: python -m venv .venv && . .venv/bin/activate && pip install -r requirements-dev.txt
+uv sync
 cp .env.example .env             # development values; edit DATABASE_URL if your database differs
 make db                          # starts PostgreSQL in Docker with its port published (skip it if you have your own)
 uv run alembic upgrade head      # create the tables
 uv run python -m scripts.seed    # the admin and the sample catalog (safe to run again)
 uv run fastapi dev               # http://localhost:8000/docs, with reload
 ```
+
+Without `uv`, run `python -m venv .venv && . .venv/bin/activate && pip install -r requirements-dev.txt`
+and leave out `uv run` from the commands above.
 
 With your own PostgreSQL, create a role with `CREATEDB` and an empty database, then set
 `DATABASE_URL` and `TEST_DATABASE_URL` in `.env`. The test fixture creates the `eve_test` database.
@@ -174,7 +179,7 @@ The constraints do the work that a rule can do, and the application is the secon
 
 - **A booking's test is offered at its centre.** One composite foreign key from `bookings (centre_id, test_id)` to `centre_tests`.
 - **One active booking per slot.** A partial unique index on `(user_id, centre_id, test_id, appointment_at)` where the status is `PENDING` or `CONFIRMED`. A cancelled slot can be booked again, and two identical requests at once give one `201` and one `409`.
-- **One live payment per booking.** A partial unique index on `payments (booking_id)` where the status is `PENDING` or `SUCCESS`. A `FAILED` payment does not block a new one.
+- **One live payment per booking.** A partial unique index on `payments (booking_id)` where the status is `PENDING` or `SUCCESS`. The index leaves a `FAILED` payment out, so it would not block a new one. Today the booking of a failed payment is `FAILED` and final, so nobody pays it again (A6).
 - **One payment per provider reference.** A partial unique index on `(provider, provider_payment_id)`, and `settled_at` is set exactly when the status is not `PENDING`.
 - **One row per webhook event.** `UNIQUE (provider, event_id)`. The row is the audit trail, and its `outcome` is one of four values, set together with `processed_at`.
 - **Money is `numeric(10,2)`** with a `CHECK` between 0.01 and 99,999,999.99. A plain `> 0` accepts `NaN`. Currency is a three-letter upper-case code.
@@ -198,22 +203,22 @@ so the models and the migrations cannot drift. The full DDL and the index plan a
 | A4 | Every centre has unlimited capacity and no opening hours. An appointment starts between 30 minutes and 365 days from now, truncated to the minute. Both limits are settings. |
 | A5 | The server copies the price into the booking. The client never sends an amount, and a later price change does not touch old bookings. |
 | A6 | A `FAILED` payment makes the booking `FAILED`, and that is final. The user books again. |
-| A7 | A patient can cancel a `PENDING` or a `CONFIRMED` booking. Refunds are out of scope, so a cancelled paid booking keeps its `SUCCESS` payment. |
+| A7 | A patient can cancel a `PENDING` or a `CONFIRMED` booking, at any time and also after the appointment. Refunds are out of scope, so a cancelled paid booking keeps its `SUCCESS` payment. |
 | A8 | A `PENDING` booking does not expire. A `PENDING` payment exists only when the request sets `simulate=PENDING`, and only a webhook settles it. |
-| A9 | The PDF does not define the webhook body. I defined a flat one. The simulated provider signs each request with a shared secret (HMAC-SHA256, five-minute window). |
+| A9 | The assignment does not define the webhook body. I defined a flat one. The simulated provider signs each request with a shared secret (HMAC-SHA256, five-minute window). |
 | A10 | The provider delivers at least once and in any order. The receiver stores every signed event with a valid body and answers `200`. It answers non-`2xx` only when the request is unusable (`401`, `413`, `422`) or when a retry can help (`503`). |
 | A11 | Access tokens only, valid for 30 minutes. No refresh token and no revocation list. |
 | A12 | JSON with `snake_case` names. Timestamps are ISO 8601 with an offset. Money is a decimal string. |
-| A13 | The paths follow the PDF (`/payments/`, `/payments/webhook/`). Both slash spellings answer and neither redirects, because webhook senders treat a redirect as a failed delivery. |
+| A13 | The paths follow the assignment (`/payments/`, `/payments/webhook/`). Both slash spellings answer and neither redirects, because webhook senders treat a redirect as a failed delivery. |
 | A14 | `DELETE` deactivates a catalog row, and `PATCH {"is_active": true}` restores it. Inactive rows are hidden from every read. |
 | A15 | The email is the login, unique without regard to case, and stored in lower case. |
 | A16 | The service stores the email, an optional name and an optional phone number. It stores no clinical data. |
-| A17 | A user cannot hold two active bookings for the same test, centre and minute. About 20 active future bookings per user is the cap (a setting). Two simultaneous requests can pass it together. |
+| A17 | A user cannot hold two active bookings for the same test, centre and minute. About 20 active future bookings per user is the cap (a setting). The cap is soft: requests that arrive together can pass it together, by as many as are in flight. |
 | A18 | The simulator succeeds with a configurable probability (default 80%). Outside production, a request field can force `SUCCESS`, `FAILED` or `PENDING`. |
 | A19 | A password has 15 to 128 characters and no composition rules (NIST SP 800-63B-4). It is never stripped, and it is NFC-normalised. The minimum is a setting. |
 | A20 | A webhook only settles a payment that exists. It never creates a payment or a booking, so a duplicate cannot create a second one. |
-| A21 | A booking whose appointment has started cannot be paid. |
-| A22 | Text input rejects control characters and bidirectional overrides, and `PATCH` rejects `null` for a field that cannot be null. |
+| A21 | A booking whose appointment has started cannot be paid. A payment that is already `PENDING` settles when its webhook arrives, even after the start. |
+| A22 | Text input rejects control characters, bidirectional overrides and lone surrogates, and `PATCH` rejects `null` for a field that cannot be null. The webhook's `failure_reason` only explains, so it is cleaned and never refused. |
 
 ---
 
@@ -236,7 +241,7 @@ so the models and the migrations cannot drift. The full DDL and the index plan a
 
 ### Testing
 
-`make check` runs about 1,370 tests against a real PostgreSQL 17, with warnings as errors. There is
+`make check` runs about 1,400 tests against a real PostgreSQL 17, with warnings as errors. There is
 no database mock. The groups are:
 
 - **Unit:** the state machine, `settle()` over every row of its decision table, the signature, the
@@ -296,9 +301,11 @@ The full list has 22 records, each with the alternatives that were rejected, in 
   an unknown email as for a wrong password.
 - JWT with a pinned algorithm, issuer, audience and expiry, and the role read from the database on
   every request, so a role change is immediate.
-- A per-IP and a per-account login throttle.
+- A per-client (IPv4 address or IPv6 /64) and a per-account login throttle. Failed logins and
+  refusals are logged with the client and a short account key, never the email.
 - The webhook checks an HMAC over the raw bytes in constant time, within a five-minute window.
-- Every response says `Cache-Control: no-store`. Every input model refuses unknown fields and control
+- Every response says `Cache-Control: no-store`. Every input model refuses unknown fields, except
+  the webhook payload and the OAuth2 form, which ignore them on purpose. Text input refuses control
   characters. A client can never set a role, a status, an amount or an owner.
 - Logs carry IDs, never an email, a secret, a token or a row value, and a test checks the output of a
   real process.

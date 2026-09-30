@@ -8,7 +8,7 @@ does at 100,000 bookings.
 
 ## 1. Assumptions
 
-The PDF leaves these points open. The service makes one choice for each, and each choice is listed here.
+The assignment brief is a PDF with six numbered parts: 1 Authentication, 2 Diagnostic Centres and Tests, 3 Booking System, 4 Simulated Payment Service, 5 Payment Webhook and 6 Edge Cases. This document cites them as *brief §1* to *brief §6*. The brief leaves these points open. The service makes one choice for each, and each choice is listed here.
 
 | # | Assumption |
 |---|---|
@@ -20,15 +20,15 @@ The PDF leaves these points open. The service makes one choice for each, and eac
 | A6 | **Payment failure.** A `FAILED` payment sets the booking to `FAILED`. This status is final. The user creates a new booking to try again (ADR-09). Without the `simulate` field, `POST /payments/` always ends in `SUCCESS` or `FAILED`. |
 | A7 | **Cancellation.** A patient can cancel a `PENDING` or `CONFIRMED` booking. Refunds are out of scope. A cancelled `CONFIRMED` booking keeps its `SUCCESS` payment, and the README lists refunds as a known gap. |
 | A8 | **Unpaid bookings.** A `PENDING` booking does not expire in v1. The user can cancel it. A `PENDING` payment exists only when the request sets `simulate=PENDING`, which is allowed outside production. Only a webhook settles it. |
-| A9 | **Webhook contract.** The PDF does not define the webhook payload. We define a flat one (§6.5). The simulated provider signs each request with a shared secret. |
+| A9 | **Webhook contract.** The brief does not define the webhook payload. We define a flat one (§6.5). The simulated provider signs each request with a shared secret. |
 | A10 | **Event delivery.** The provider delivers at least once and in any order. The receiver stores every signed event that has a valid body and answers `200`. It answers non-`2xx` only when the request is unusable (`401`, `413`, `422`) or when a retry can fix the error (`503`). |
 | A11 | **Tokens.** Access tokens only, 30 minutes. No refresh token and no revocation list in v1. |
 | A12 | **Wire format.** JSON with `snake_case` names. Timestamps are ISO 8601 with a UTC offset. Money is a decimal string, for example `"499.00"`. |
-| A13 | **Paths.** The canonical form follows the PDF (`/payments/`, `/payments/webhook/`). Every route also answers with the other slash spelling and never redirects, because webhook senders such as Stripe treat a redirect as a failed delivery. |
+| A13 | **Paths.** The canonical form follows the brief (`/payments/`, `/payments/webhook/`). Every route also answers with the other slash spelling and never redirects, because webhook senders such as Stripe treat a redirect as a failed delivery. |
 | A14 | **Deletion.** Rows are never deleted, because bookings reference centres and tests. `DELETE` deactivates a row (`is_active = false`). `PATCH {"is_active": true}` restores it. Inactive rows are hidden from every read. An admin restores a row by its known ID. |
 | A15 | **Login identifier.** The email address is the login. Emails are unique without regard to case. We store them in lowercase. The login field is a plain string and not an `EmailStr`, so any stored address can log in. |
 | A16 | **Personal data.** We store the email, an optional name and an optional phone number. We store no clinical data. |
-| A17 | **Duplicates and volume.** One user cannot hold two active bookings (`PENDING` or `CONFIRMED`) for the same test, centre and minute. One user can hold about 20 active future bookings (a setting). The cap is soft: two simultaneous requests can pass it together (§5.4). |
+| A17 | **Duplicates and volume.** One user cannot hold two active bookings (`PENDING` or `CONFIRMED`) for the same test, centre and minute. One user can hold about 20 active future bookings (a setting). The cap is soft: requests that arrive together can pass it together, by as many as are in flight (§5.4). |
 | A18 | **Payment simulator.** The simulator succeeds with a configurable probability (default 80%). A simulated failure carries the reason `declined_by_simulator`. Outside production, a request field can force `SUCCESS`, `FAILED` or `PENDING`. `PENDING` means "the provider confirms later by webhook". |
 | A19 | **Password policy.** 15 to 128 characters and no composition rules. This is the NIST SP 800-63B-4 baseline for a password that is the only factor. Passwords are never stripped and are NFC-normalised. The minimum is a setting, so it can be lowered for a friendlier demo (ADR-13). |
 | A20 | **Webhooks settle, never create.** A webhook only settles a payment that already exists. It never creates a payment or a booking. This is why a duplicate cannot create a second payment. |
@@ -89,13 +89,13 @@ flowchart TD
     RP -.-> CORE
 ```
 
-**Import rules.** Ruff enforces the framework bans (`TID251` with per-file ignores). `fastapi` stays in routers, dependencies and `core`. SQLAlchemy sessions stay in repositories, `core.db` and tests. `import-linter` (P2) enforces the finer layer contract.
+**Import rules.** Ruff enforces the framework bans (`TID251` with per-file ignores). `fastapi` stays in routers, dependencies and `core`. SQL statements stay in repositories. A service holds the `Session` only to add the objects that it builds and to end its transaction. `import-linter` (P2) would enforce the finer layer contract. Until then, the table below lists each exception that the code makes.
 
 | Layer | Can import | Must not import |
 |---|---|---|
-| `router.py`, `dependencies.py`, `schemas.py` | Own `service`, `core`, `models` enums, other packages' `schemas`, `auth.dependencies` (current user and admin check) | `repository`, SQLAlchemy `Session` queries |
-| `service.py` | Own `repository`, `state`/`policy`/`settlement`, `core` and `models`. Other packages' `repository` modules and pure rules | `fastapi`, any router, any other service |
-| `repository.py`, `inbox.py` | `models`, `core.pagination`, SQLAlchemy | `service`, `fastapi` |
+| `router.py`, `dependencies.py`, `schemas.py` | Own `service`, `core`, `models` enums, other packages' `schemas`, `auth.dependencies` (current user and admin check) | `repository`, SQLAlchemy queries. Two exceptions: `catalog/router.py` imports the value types `CentreFilters` and `OfferedTest` from `catalog/repository.py`, and `auth/dependencies.py` builds a `UserRepository` for the one primary-key read of `get_current_user` |
+| `service.py` | Own `repository`, `state`/`policy`/`settlement`, `core` and `models`. Other packages' `repository` modules and pure rules | `fastapi`, any router, any other service. One exception: `PaymentService.handle_webhook` takes the validated `WebhookPayload` and returns a `WebhookAck`, because the payload is the contract with the provider (ADR-06). Every other service method takes plain values |
+| `repository.py`, `inbox.py` | `models`, `core.pagination`, SQLAlchemy. `inbox.py` also takes the `WebhookPayload` that it stores | `service`, `fastapi` |
 | `state.py`, `policy.py`, `settlement.py`, `signature.py` | Standard library, `models` (enums and entities), `core.errors`, other packages' pure rules (`settlement.py` calls `bookings.state.transition`) | `fastapi`, SQLAlchemy `Session`, `core.db`, any `repository` |
 | `models/` | SQLAlchemy, `models.base` | Everything else |
 | `core/` | Standard library and third-party libraries | Any feature package |
@@ -130,7 +130,7 @@ eve_healthcare/
 │   ├── core/
 │   │   ├── config.py         # Settings (pydantic-settings) and production validators
 │   │   ├── db.py             # engine, sessionmaker, get_session, transaction, domain_errors, retry_transient
-│   │   ├── security.py       # hash/verify password (NFC), hash_slot dependency, create/decode access token
+│   │   ├── security.py       # hash/verify password (NFC), HashSlots, create/decode access token
 │   │   ├── throttle.py       # auth throttle: limits library, in-memory (P1)
 │   │   ├── errors.py         # AppError hierarchy = the error catalogue (§5.3)
 │   │   ├── problem.py        # RFC 9457 model, exception handlers, problems() helper for responses=
@@ -166,22 +166,24 @@ eve_healthcare/
 
 The `models/` folder is shared on purpose. The whole schema reads in one place. Alembic imports one module. Repositories can join across tables without importing another feature package. The `scripts/` folder is a package that the image copies (§10.1), so `python -m scripts.seed` works in the container and on a laptop.
 
-**Three small pieces of infrastructure carry a rule each.** Tests run them on Starlette 1.7.0.
+**Four small pieces of infrastructure carry a rule each.** Tests run them on Starlette 1.7.0. The first is `TolerantRouter`:
 
 ```python
 # app/core/routing.py — both slash spellings, HEAD next to GET, never a redirect.
 class TolerantRouter(APIRouter):
-    def add_api_route(self, path, endpoint, **kwargs):
+    def add_api_route(self, path: str, endpoint: Callable[..., Any], **kwargs: Any) -> None:
         super().add_api_route(path, endpoint, **kwargs)
         hidden = {**kwargs, "include_in_schema": False}
         has_get = "GET" in (kwargs.get("methods") or ())
         if has_get:
             super().add_api_route(path, endpoint, **{**hidden, "methods": ["HEAD"]})
-        alt = path[:-1] if path.endswith("/") else path + "/"
-        if alt != path and (alt or self.prefix):  # skip the empty path of a root route
-            super().add_api_route(alt, endpoint, **hidden)
+        alternate = path[:-1] if path.endswith("/") else path + "/"
+        if alternate != path and (
+            alternate or self.prefix
+        ):  # "" is a valid path only under a prefix
+            super().add_api_route(alternate, endpoint, **hidden)
             if has_get:
-                super().add_api_route(alt, endpoint, **{**hidden, "methods": ["HEAD"]})
+                super().add_api_route(alternate, endpoint, **{**hidden, "methods": ["HEAD"]})
 ```
 
 Every feature router is a `TolerantRouter`, and the app sets `redirect_slashes=False`. `/payments` and `/payments/` both reach the same handler. `HEAD` answers wherever `GET` does. Only the canonical `GET` spelling appears in the OpenAPI document. The first route with a name is the canonical one, so `url_path_for` returns the canonical path.
@@ -202,7 +204,7 @@ Every feature router is a `TolerantRouter`, and the app sets `redirect_slashes=F
 6. FastAPI validates path, query and body fields. A failure returns `422`. A request with a well-formed body, invalid fields and no token gets `401`, not `422`, because step 5 comes first. Tests for authentication send a valid body.
 7. The handler calls one service method.
 8. The service reads through repositories, applies pure rules, writes, ends its transaction and logs one business event.
-9. The handler returns an ORM object. `response_model` filters and serialises it.
+9. The handler returns a schema instance, and Pydantic serialises it. Two handlers, `signup` and `read_me`, return the ORM object, and `response_model` filters it.
 10. An `AppError` becomes a problem response. A validation error becomes a problem response. Starlette's own `404` and `405` become problem responses with `ROUTE_NOT_FOUND` and `METHOD_NOT_ALLOWED`. An unhandled exception becomes a `500` problem response. Its handler sets the request ID in the body and in `X-Request-ID`, and it sets both cache headers (§2.3). The log keeps a scrubbed stack trace (§8.2). The client does not see it.
 11. The session dependency closes the session and rolls back any uncommitted work. It declares `scope="function"`. The exit code then runs after the handler returns and the response model is serialised, but before the response is sent. The connection returns to the pool early, even when the client is slow.
 
@@ -217,14 +219,14 @@ Contracts only. Exact signatures come with the code. Statement counts are assert
 | `get_settings()` | Returns the cached `Settings`. Stops the start-up when `ENVIRONMENT` is missing. It also stops when a secret is missing, too short or a known placeholder outside `development`. In production it stops when `WEBHOOK_SIGNATURE_REQUIRED` is `false` (§8.3). | Overridden in tests. |
 | `get_session()` | Yields one `Session` per request. Closes it on exit. | `scope="function"`. `expire_on_commit=False`. |
 | `retry_transient(fn, retry_on_constraints=, attempts=3)` | Runs a whole transaction again after SQLSTATE 40001 or 40P01. It also does so after a unique violation on a constraint that the caller names (the webhook names `uq_payments_provider_ref`). Waits a short random time between attempts. After the last attempt it raises `ServiceUnavailable` (`503`) from the database error. It does not retry a lock timeout (55P03). `is_transient(error, constraints)` holds the rule. | The webhook uses it (§6.3). `core` names no payment constraint. |
-| `transaction(session)` | A context manager for one use case: it commits when the block ends and rolls back when the block raises. Every service method that writes or locks runs inside it, so a lock never outlives the call. | `cancel`, `pay` and the webhook use it. |
+| `transaction(session)` | A context manager for one use case: it commits when the block ends and rolls back when the block raises. Every service method that takes a lock runs inside it, so a lock never outlives the call. | `cancel`, `pay` and the webhook use it. `signup`, the catalog writes and `BookingService.create` take no lock. One statement is their whole transaction, so they call `session.commit()` inside `domain_errors`. |
 | `domain_errors(session, by_constraint)` | A context manager that rolls back and then turns a violated constraint into the domain error that names it. A constraint that is not in the mapping is raised unchanged. | Build the errors for each call: an exception carries its traceback. |
 | `hash_password(plain)` | NFC-normalises the password. Returns an Argon2id hash. | CPU-bound, 55 to 67 ms with the library defaults on an idle 8-core machine. |
 | `verify_password(plain, hash)` | Returns `bool`. Same normalisation. | Constant-time compare. |
 | `HashSlots.slot()` | A context manager over a `threading.BoundedSemaphore` (`HASH_MAX_CONCURRENCY`, default 4). It takes a slot with `acquire(blocking=False)`. A full semaphore raises `ServiceUnavailable` at once (`503`, `Retry-After`). It releases the slot on exit. | `auth_gate` uses it on the event loop. A waiting semaphore inside a sync handler starved the pool. |
 | `create_access_token(user_id, settings)` | Returns `(token, expires_in)`. Claims: `sub` (a string), `iat`, `exp`, `iss`, `aud`. Uses the real clock, because PyJWT checks `iat` and `exp` against it. | HS256. Builds `jwt.PyJWT(options={"enforce_minimum_key_length": True})`. |
 | `decode_access_token(token, settings)` | Returns the user ID (a `UUID`) or raises `InvalidToken`, for every failure alike. Pins the algorithm. Requires `exp`, `sub`, `iss` and `aud`, and checks `iss` and `aud`. | No clock argument, because PyJWT checks against the real clock. |
-| `LoginThrottle` | `check(ip, email=None)` counts the request against the IP limit and raises `RateLimited` (with `Retry-After`) when the IP limit or the account limit is spent. `record_failure(email)` counts one failed login. `reset(email)` clears the account counter after a good login. The account key is the SHA-256 of the NFC-normalised, lower-cased email, so case variants share one counter and any email costs a fixed-size key. | `limits` library, in-memory, moving window (§7.2). |
+| `LoginThrottle` | `check(client, email=None)` counts the request against the client limit and raises `RateLimited` (with `Retry-After`) when the client limit or the account limit is spent. The client key is the IPv4 address or the IPv6 /64 (`client_key`). `record_failure(email)` counts one failed login. `reset(email)` clears the account counter after a good login. The account key is the SHA-256 of the NFC-normalised, lower-cased email, so case variants share one counter and any email costs a fixed-size key. | `limits` library, in-memory, sliding window counter (§7.2). |
 | `PageParams` / `Page[T]` | `limit` 1–100 (default 20), `offset` 0–10,000. `Page` holds `data` and `pagination`. | |
 | `scrub_database_errors` | A structlog processor. It walks `__cause__` and `__context__` and replaces a database error with its class, SQLSTATE and constraint name. | PostgreSQL error text echoes row values such as the email. |
 | `configure_logging()` | Runs in the lifespan start-up, after Uvicorn has configured its own loggers. Sets structlog with `show_locals=False` and the scrubber. Disables `uvicorn.access`. Drops the traceback from `uvicorn.error` records. | Uvicorn's access log prints the query string, and its traceback prints the row values of a database error. |
@@ -233,7 +235,7 @@ Contracts only. Exact signatures come with the code. Statement counts are assert
 
 | Function | Contract | Commits | Raises |
 |---|---|---|---|
-| `AuthService.signup(data)` | Lower-cases the email. Hashes the password. Inserts a `PATIENT`. One statement, no pre-check. | yes | `EmailAlreadyRegistered` |
+| `AuthService.signup(email, password, full_name, phone)` | Takes plain values. The schema has trimmed and lower-cased the email already. Hashes the password. Inserts a `PATIENT`. One statement, no pre-check. | yes | `EmailAlreadyRegistered` |
 | `AuthService.login(email, password)` | Loads the user by email. Verifies the password. When the user is missing, verifies against the dummy hash that start-up computed. Records a failure or clears the account counter. Returns an access token. | no | `InvalidCredentials` |
 | `auth_gate(request, email=None)` | An async context manager that `signup_gate`, `login_gate` and `token_gate` use. Each gate is an `async def` dependency that returns the parsed input, so the handler does not declare the body twice. `auth_gate` calls `LoginThrottle.check` and then takes a hashing slot, both on the event loop, before the request needs a pool thread. The signup gate first checks `PASSWORD_MIN_LENGTH`, which a schema cannot, and raises the same 422 as a schema error. | no | `RateLimited`, `ServiceUnavailable` |
 | `get_current_user(token)` | Dependency. Reads the token with `auto_error=False`. Decodes it. Loads the user by ID. | no | `NotAuthenticated`, `InvalidToken` |
@@ -355,20 +357,20 @@ erDiagram
     }
 ```
 
-`bookings (centre_id, test_id)` is one composite foreign key to `centre_tests (centre_id, test_id)`. Every table except `webhook_events` also has `created_at` and `updated_at` (`timestamptz`). The PDF asks for a centre with a name, a location and its tests with prices. `centres` holds `name`, `location` and an optional `city` for filtering, and `centre_tests` holds the price of each test at each centre.
+`bookings (centre_id, test_id)` is one composite foreign key to `centre_tests (centre_id, test_id)`. Every table except `webhook_events` also has `created_at` and `updated_at` (`timestamptz`). The brief asks for a centre with a name, a location and its tests with prices. `centres` holds `name`, `location` and an optional `city` for filtering, and `centre_tests` holds the price of each test at each centre.
 
 ### 3.2 Conventions
 
 | Topic | Rule |
 |---|---|
 | Names | Tables: plural `snake_case`. One naming convention on `MetaData` builds the names of single-column constraints: `pk_`, `fk_`, `uq_`, `ix_`, `ck_` + table + column. Every multi-column constraint and every index gets an explicit name, because the convention uses the first column only. Migrations wrap explicit names in `op.f()`. Names stay under 63 characters. |
-| IDs | UUIDv4 from `uuid.uuid4()`, created in Python, so the ID is known before the flush. `centre_tests` uses its natural composite key. `# ponytail: UUIDv4 fragments B-tree indexes past ~10M rows → UUIDv7 (Python 3.14 stdlib or PostgreSQL 18 uuidv7())`. |
+| IDs | UUIDv4 from `uuid.uuid4()`, created in Python, so the ID is known before the flush. `centre_tests` uses its natural composite key. `# known limit: UUIDv4 fragments B-tree indexes past ~10M rows → UUIDv7 (Python 3.14 stdlib or PostgreSQL 18 uuidv7())`. |
 | Time | `timestamptz` only. The session runs in UTC. `created_at` defaults to `now()`. The ORM sets `updated_at` on change (`onupdate=func.now()` with `eager_defaults=True`, so `RETURNING` fills the value and no refresh query runs). An upsert bypasses `onupdate`, so it sets `updated_at=func.now()` itself. The API returns ISO 8601 with `Z`. |
 | Money | `numeric(10,2)` with `CHECK (x BETWEEN 0.01 AND 99999999.99)`. A plain `CHECK (x > 0)` accepts `NaN`, because PostgreSQL sorts `NaN` above every number. `Decimal` in Python. String in JSON. Pydantic rejects more than two decimal places, so the database never rounds (it rounds half away from zero). A `currency` column holds an ISO 4217 code. |
 | Status columns | `varchar(32)` plus a named `CHECK`, built from a Python `StrEnum` with `sa.Enum(..., native_enum=False, length=32, create_constraint=True, name="status", values_callable=...)`. A bare `Mapped[StrEnum]` annotation silently creates a **native** PostgreSQL enum that stores member names, so we never use it. A test asserts that the schema has no native enum type. Alembic never updates the `CHECK`, so a new status needs a hand-written migration. |
 | Booleans | `is_active` and `is_available` replace deletion (assumption A14). |
 | Relationships | `lazy="raise_on_sql"` on every relationship. `Booking.centre` and `Booking.test` are `viewonly=True` with an explicit `primaryjoin`, because the composite foreign key targets `centre_tests`. `Booking.payments` is view-only too, ordered by `created_at` and `id`. The write paths never go through a relationship. |
-| Text length | Pydantic enforces the limits (for example `full_name` has 1–100 characters). The 64 KiB body cap bounds every value. `# ponytail: no length CHECK → add CHECK (char_length(x) <= n) if another writer appears`. |
+| Text length | Pydantic enforces the limits (for example `full_name` has 1–100 characters). The 64 KiB body cap bounds every value. `# known limit: no length CHECK → add CHECK (char_length(x) <= n) if another writer appears`. |
 | Logic | No triggers and no stored procedures. The database holds constraints. Python holds logic. |
 
 ### 3.3 Table definitions
@@ -523,9 +525,9 @@ The DDL above leaves primary keys unnamed, and PostgreSQL then calls them `<tabl
 | Webhook deduplication | `uq_webhook_events_provider_event` | webhook |
 | Events of a payment | `ix_webhook_events_payment_id` | operations queries |
 
-The `q` filter on `GET /centres/` uses `ILIKE` with escaped wildcards and reads the small catalog with a sequential scan. `# ponytail: sequential scan → pg_trgm GIN index when centres pass about 10,000 rows`.
+The `q` filter on `GET /centres/` uses `ILIKE` with escaped wildcards and reads the small catalog with a sequential scan. `# known limit: sequential scan → pg_trgm GIN index when centres pass about 10,000 rows`.
 
-The two operator queries scan their tables: stuck `PENDING` payments (§8.2, Q4) and `REJECTED` or `NEEDS_REVIEW` events (§6.5). `# ponytail: sequential scan → partial indexes on payments (created_at) WHERE status = 'PENDING' and on webhook_events (received_at) WHERE outcome IN ('REJECTED', 'NEEDS_REVIEW'), once either table passes about 1 million rows`.
+The two operator queries scan their tables: stuck `PENDING` payments (§8.2, Q4) and `REJECTED` or `NEEDS_REVIEW` events (§6.5). `# known limit: sequential scan → partial indexes on payments (created_at) WHERE status = 'PENDING' and on webhook_events (received_at) WHERE outcome IN ('REJECTED', 'NEEDS_REVIEW'), once either table passes about 1 million rows`.
 
 ### 3.5 Invariants
 
@@ -623,7 +625,7 @@ BOOKING_TRANSITIONS: Mapping[BookingStatus, frozenset[BookingStatus]] = {
 }
 ```
 
-**ADR-09 changes `settle()`, not this table.** The alternative keeps the booking `PENDING` after a failed payment. In `settle()`, the `FAILED` branch then skips the booking transition. The partial unique index needs no change, because a `FAILED` payment is not live and a new payment can follow it. The cost: no code path sets a booking to `FAILED` any more, and the PDF lists `FAILED` as a booking state. This is why the recommendation keeps `FAILED` final.
+**ADR-09 changes `settle()`, not this table.** The alternative keeps the booking `PENDING` after a failed payment. In `settle()`, the `FAILED` branch then skips the booking transition. The partial unique index needs no change, because a `FAILED` payment is not live and a new payment can follow it. The cost: no code path sets a booking to `FAILED` any more, and the assignment lists `FAILED` as a booking state. So a failed payment ends the booking as `FAILED`, and that status is final.
 
 | Transition | Trigger | Guard | Code path |
 |---|---|---|---|
@@ -663,7 +665,7 @@ A parametrised unit test walks every row. No database is involved. The webhook h
 
 | Topic | Rule |
 |---|---|
-| Base path | The root, with no version prefix. The PDF fixes `/payments/` and `/payments/webhook/`. A `/v1` prefix later is one argument on `include_router` (assumption A13). |
+| Base path | The root, with no version prefix. The brief fixes `/payments/` and `/payments/webhook/`. A `/v1` prefix later is one argument on `include_router` (assumption A13). |
 | Slashes | Every route answers in both spellings and never redirects (`TolerantRouter`, §2.3). Only the canonical spelling appears in `/docs`. Collections end with `/` (`/centres/`). Items do not (`/centres/{centre_id}`). |
 | Resources | Plural nouns. Path IDs are typed `UUID`, so a malformed ID returns `422`. |
 | Methods | `GET` reads. `POST` creates or runs a command. `PUT` sets a full value (the centre-test price). `PATCH` changes some fields. `DELETE` deactivates a catalog row and returns `204` (A14). |
@@ -783,7 +785,7 @@ Each card lists the exact steps of a critical endpoint. The **Tests** line names
 - **Input.** `email` (`EmailStr`, lower-cased, trimmed), `password` (15–128 characters, set by `PASSWORD_MIN_LENGTH`, never stripped), `full_name` (optional, 1–100), `phone` (optional, E.164). Extra fields return `422`, so `{"role": "ADMIN"}` never works.
 - **Steps.** The `auth_gate` dependency counts the request against the per-IP limit and takes a hashing slot, on the event loop (§7.2). Normalise the password (NFC) and hash it with Argon2id in the thread pool. Run `INSERT INTO users … RETURNING *`. Commit. A violation of `uq_users_email` becomes `EMAIL_ALREADY_REGISTERED`. There is no pre-check `SELECT`, so two simultaneous signups cannot both pass.
 - **Response.** `201` with `UserRead` (`id`, `email`, `full_name`, `phone`, `role`, `created_at`). There is no `Location`, because no route reads a user by ID. The hash never leaves the service.
-- **Trade-offs.** A `409` reveals that an email exists. The per-IP throttle limits abuse. Password rules are length-only, as in NIST SP 800-63B-4. NIST also asks for a blocklist check. `# ponytail: no blocklist, because the 15-character minimum removes most common passwords → add a k-anonymity or top-10k list check`.
+- **Trade-offs.** A `409` reveals that an email exists. The per-IP throttle limits abuse. Password rules are length-only, as in NIST SP 800-63B-4. NIST also asks for a blocklist check. `# known limit: no blocklist, because the 15-character minimum removes most common passwords → add a k-anonymity or top-10k list check`.
 - **Tests.** Happy path. Duplicate email in different case. Password of 14 characters. Password with leading spaces keeps them. Extra `role` field. Response has no hash. Two concurrent signups: one `201`, one `409`. Throttle returns `429`.
 
 #### `POST /auth/login` and `POST /auth/token`
@@ -804,7 +806,7 @@ Each card lists the exact steps of a critical endpoint. The **Tests** line names
   4. Insert the booking with `status = 'PENDING'` and `amount` copied from step 1. Commit.
   5. A violation of `uq_bookings_active_slot` becomes `409 DUPLICATE_BOOKING`.
 - **Response.** `201`, `Location` (a path built with `request.app.url_path_for`, so no client `Host` header reaches it and a later `/v1` prefix needs no change), `BookingRead`.
-- **Concurrency.** Two identical requests: the unique index lets one succeed. A price change between step 1 and step 4 is harmless, because the booking stores the price it read. The cap is a soft limit. Two simultaneous requests can both pass the count. `# ponytail: soft cap → lock the user row with SELECT … FOR NO KEY UPDATE if the cap must be exact`.
+- **Concurrency.** Two identical requests: the unique index lets one succeed. A price change between step 1 and step 4 is harmless, because the booking stores the price it read. The cap is a soft limit. Two simultaneous requests can both pass the count. `# known limit: soft cap → lock the user row with SELECT … FOR NO KEY UPDATE if the cap must be exact`.
 - **Tests.** Happy path. Price snapshot survives a later price change. Unknown centre. Unknown test. Test not offered at the centre. Unavailable offering. Inactive centre. Past time. Naive datetime. More than 365 days ahead. Seconds are truncated. Duplicate. The 21st active booking. Extra `amount` field. No token. Concurrent duplicate. Query count.
 
 #### `POST /bookings/{booking_id}/cancel`
@@ -827,13 +829,13 @@ Each card lists the exact steps of a critical endpoint. The **Tests** line names
   1. `BodyLimitMiddleware` rejects a body over 64 KiB with `413`.
   2. An async dependency reads the raw bytes and verifies `X-Webhook-Signature` (§6.5). Failure: `401`. `WEBHOOK_SIGNATURE_REQUIRED=false` skips this step outside production.
   3. Parse the body with `model_validate_json`. A `ValidationError` becomes a `RequestValidationError`, so the client gets a normal `422`. (A raw `ValidationError` in a dependency returns `500`.) A body that fails validation is not an event yet, so nothing is stored. The log records the request ID and the failing field names.
-  4. Begin one transaction. Run `INSERT INTO webhook_events … ON CONFLICT DO NOTHING RETURNING id` with `payment_id` set to `NULL`. No row: return `200 {"status": "duplicate"}`.
+  4. Begin one transaction. Run `INSERT INTO webhook_events … ON CONFLICT DO NOTHING RETURNING id` with `payment_id` set to `NULL`. No row: return `200 {"status": "duplicate", "outcome": null, "detail": null}`.
   5. Read the payment's booking ID. Unknown payment: mark the event `REJECTED` (`unknown_payment`), commit, return `200`.
   6. Lock the booking, then the payment (`FOR NO KEY UPDATE`, `populate_existing`).
   7. Check amount, currency and provider reference against the payment. A mismatch marks the event `REJECTED` (`amount_mismatch`, `currency_mismatch` or `provider_reference_conflict`), commits and returns `200`.
   8. Run `settle()`. Mark the event with the outcome and set `payment_id`. Commit.
   9. A deadlock or a serialization failure (SQLSTATE 40P01 or 40001) runs steps 4 to 8 again, up to three attempts. So does a unique violation on `uq_payments_provider_ref`: a concurrent event took the same reference, and the second run records `REJECTED` (`provider_reference_conflict`). A lock timeout (55P03) returns `503` at once, and the provider retries. A `DataError` returns `422`. Other database errors return `503`.
-- **Response.** `200 {"status": "processed", "outcome": "...", "detail": ...}` or `200 {"status": "duplicate"}`.
+- **Response.** `200 {"status": "processed", "outcome": "...", "detail": ...}` or `200 {"status": "duplicate", "outcome": null, "detail": null}`. The three keys are always present.
 - **No body parameter.** The handler declares none. FastAPI therefore never parses the body, and a bad signature returns `401` even when the JSON is invalid. `openapi_extra` documents the body, and `add_model_schemas` registers `WebhookPayload` in `components.schemas`, so every `$ref` in the document resolves (a test walks them all).
 - **Tests.** In §9.3 (webhook group).
 
@@ -848,7 +850,7 @@ Each card lists the exact steps of a critical endpoint. The **Tests** line names
 
 - **Input.** Optional `city` (case-insensitive exact match), `test_id`, `q` (case-insensitive substring of `name`, `location` or `city`, with `%`, `_` and `\` escaped). `limit`, `offset`.
 - **Steps.** `SELECT count(*)` over the active centres that match. Then one page query ordered by `name, id`. With `test_id` set, the query joins `centre_tests` (available rows only) and returns each centre's price for that test. Without it, the list carries no price.
-- **Response.** `200` with a page of `CentreRead`. Inactive centres never appear. An admin restores one through `PATCH` with its known ID. `# ponytail: no admin list of inactive rows → add ?include_inactive for admins`.
+- **Response.** `200` with a page of `CentreRead`. Inactive centres never appear. An admin restores one through `PATCH` with its known ID. `# known limit: no admin list of inactive rows → add ?include_inactive for admins`.
 - **Tests.** Each filter alone and combined. The city match ignores case. `%` and `_` match literally. The price appears only with `test_id`. The order is stable across pages. Inactive centres are hidden. Query count.
 
 #### `GET /bookings/{booking_id}`
@@ -859,17 +861,17 @@ Each card lists the exact steps of a critical endpoint. The **Tests** line names
 #### `GET /bookings/`
 
 - **Input.** Optional `status`. `limit`, `offset`.
-- **Steps.** `SELECT count(*)` for the user (and status). Then one page query with a join to `centres` and `diagnostic_tests` for the names. The index serves both the filter and the order. For a user with few bookings, the planner sorts them in memory. For a heavy user (5,000 bookings in my check), page 1 reads the index in order. It stops at the limit, in under 0.2 ms. A deep page (offset 4,000) sorts about 4,000 rows in 3 to 5 ms. The offset cap of 10,000 bounds the worst case. Explicit `joinedload` options and `lazy="raise_on_sql"` on relationships prevent N+1.
-- **Notes.** `# ponytail: offset pagination → keyset on (created_at, id) when a user can hold thousands of bookings`. The index already fits keyset.
+- **Steps.** `SELECT count(*)` for the user (and status). Then one page query with a join to `centres` and `diagnostic_tests` for the names. The index serves both the filter and the order. For a user with few bookings, the planner sorts them in memory. For a heavy user (5,000 bookings), page 1 reads the index in order. It stops at the limit, in under 0.2 ms. A deep page (offset 4,000) sorts about 4,000 rows in 3 to 5 ms. The offset cap of 10,000 bounds the worst case. Explicit `joinedload` options and `lazy="raise_on_sql"` on relationships prevent N+1.
+- **Notes.** `# known limit: offset pagination → keyset on (created_at, id) when a user can hold thousands of bookings`. The index already fits keyset.
 
 ### 5.5 OpenAPI documentation
 
 - Title, version, and a description that explains the auth flow (sign up, log in, press *Authorize*).
 - A tag with a description for each of: Auth, Users, Centres, Tests, Bookings, Payments, Health. The tag list order is the order in the UI.
-- `OAuth2PasswordBearer(tokenUrl="auth/token", auto_error=False)` powers Swagger's *Authorize* button. It points at the form endpoint. `auto_error=False` lets our dependency raise the problem response.
+- `OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)` powers Swagger's *Authorize* button. It points at the form endpoint. `auto_error=False` lets our dependency raise the problem response.
 - Stable `operationId` values through a `generate_unique_id_function` that returns `route.name`. Handler names are unique across all routers (`create_booking`, `list_bookings`, `create_payment`). A test enforces this. The older `{tag}-{name}` recipe raises `IndexError` on an untagged route.
-- Every endpoint has a summary, a description, a request example and `responses` for each error status in the catalogue. The webhook documents its headers and body through `openapi_extra`.
-- An automated test walks the OpenAPI document. It asserts that every operation has a summary, a unique `operationId` and a documented response for each status in §5.2.
+- Every endpoint has a summary, a description and `responses` for each error status in the catalogue. The main request bodies carry an example. The webhook documents its headers and body through `openapi_extra`, and `add_model_schemas` registers its payload model in `components.schemas`.
+- An automated test walks the OpenAPI document. It asserts that every operation has a summary, a description and a unique `operationId`, that each one has a documented response for each status in §5.2, and that every `$ref` resolves.
 - `/docs` and `/openapi.json` are on in `development` and `test`, and off in `production` by default (`DOCS_ENABLED`, §8.3).
 
 ### 5.6 Schemas
@@ -908,7 +910,7 @@ This section carries the most design risk. Tests check its concurrency claims ag
 
 ### 6.1 Flows
 
-The PDF describes two endpoints that both change payment and booking status. One function, `settle()`, changes them. Both endpoints call it.
+The brief describes two endpoints that both change payment and booking status. One function, `settle()`, changes them. Both endpoints call it.
 
 **Pay a booking.** The whole flow is one short transaction. The simulator runs in the same process and does no I/O, so no lock spans a network call.
 
@@ -993,7 +995,7 @@ sequenceDiagram
 
 **Why the gate and the state change share one transaction.** If processing fails, the rollback removes the event row. The provider's retry then runs the event again. If the gate committed alone, a crash leaves an event that is marked as seen and never applied.
 
-**Why duplicates are cheap.** A duplicate of a finished event costs one statement, an index probe. It takes no booking lock. A duplicate that arrives while the first delivery still runs waits for that transaction. When the first delivery then times out on a held booking lock, the duplicate waits for that lock itself. Its worst wait is about two lock timeouts. `# ponytail: waiting duplicates hold a thread and a connection → fail fast with pg_try_advisory_xact_lock(hashtext(event_id)) if bursts of concurrent duplicates appear`.
+**Why duplicates are cheap.** A duplicate of a finished event costs one statement, an index probe. It takes no booking lock. A duplicate that arrives while the first delivery still runs waits for that transaction. When the first delivery then times out on a held booking lock, the duplicate waits for that lock itself. Its worst wait is about two lock timeouts. `# known limit: waiting duplicates hold a thread and a connection → fail fast with pg_try_advisory_xact_lock(hashtext(event_id)) if bursts of concurrent duplicates appear`.
 
 **Concurrent duplicates.** The second `INSERT` waits for the first transaction to end. PostgreSQL blocks it on the unique index entry. If the first transaction commits, the second inserts nothing and answers `duplicate`. If the first rolls back, the second inserts the row and processes the event. *(Tests cover both cases with two sessions and with twenty concurrent deliveries.)* Keep the default READ COMMITTED isolation. Under REPEATABLE READ, the second insert fails with `40001`.
 
@@ -1037,7 +1039,7 @@ sequenceDiagram
 | F12 | Hashing semaphore full (signup, login) | Nothing | `503` with `Retry-After`. |
 | F13 | Redis down (P2) | No effect on correctness | The cache and the limiter fail open and log a warning. |
 
-**Retry handling** (a PDF bonus item) has four parts:
+**Retry handling** (a bonus item of the brief) has four parts:
 
 1. The receiver is safe to retry, because of §6.2.
 2. Status codes tell the provider what to do. `2xx` stops it. That includes `duplicate`, `REJECTED` and `NEEDS_REVIEW`, because a retry of the same bytes gives the same answer. `503` means "try again". `401`, `413` and `422` mean "this request is wrong". A provider that retries every non-`2xx` response, as Stripe does, retries those in vain. Each retry costs one cheap rejection.
@@ -1073,14 +1075,14 @@ The signature above is real. It uses the secret `whsec_demo_only_not_a_real_secr
 | Unknown fields | Ignored. A provider can add fields without breaking us. |
 | Stored payload | The `payload` column stores the validated fields (`model_dump(mode="json")`), not the raw body. Unknown fields are dropped and text fields reject `NUL`, so the `jsonb` insert cannot fail on `\u0000`. |
 | Trust | The payload names only `payment_id`. The receiver derives the booking from its own records. It ignores any booking ID in the payload. |
-| Response | `200 {"status": "processed", "outcome": "<outcome>", "detail": "<code or null>"}` or `200 {"status": "duplicate"}`. |
+| Response | `200 {"status": "processed", "outcome": "<outcome>", "detail": "<code or null>"}` or `200 {"status": "duplicate", "outcome": null, "detail": null}`. The three keys are always present. |
 | `REJECTED` details | `unknown_payment`, `amount_mismatch`, `currency_mismatch`, `provider_reference_conflict`. The event is stored and nothing else changes. |
 | `NEEDS_REVIEW` details | `terminal_conflict`, `reference_mismatch`, `booking_not_pending` (§4.3). |
 | Errors | Problem format. `401` signature. `413` body too large. `422` body invalid: nothing is stored, and the log names the failing fields. `503` a database error that a retry can fix, such as a lock timeout. |
-| Reused event ID | The gate answers `duplicate` for a reused `event_id`, even when the body differs. `# ponytail: no payload comparison → store a body hash and log or return 409 when it differs, if a provider reuses IDs` |
-| Secret rotation | `# ponytail: one secret → accept a list of secrets during rotation` |
-| Extra providers | `# ponytail: one provider (SIMULATOR) → route per provider: /payments/webhook/{provider}/` |
-| Amount optional | `# ponytail: amount and currency optional to keep the contract minimal → make them required when the real provider always sends them` |
+| Reused event ID | The gate answers `duplicate` for a reused `event_id`, even when the body differs. `# known limit: no payload comparison → store a body hash and log or return 409 when it differs, if a provider reuses IDs` |
+| Secret rotation | `# known limit: one secret → accept a list of secrets during rotation` |
+| Extra providers | `# known limit: one provider (SIMULATOR) → route per provider: /payments/webhook/{provider}/` |
+| Amount optional | `# known limit: amount and currency optional to keep the contract minimal → make them required when the real provider always sends them` |
 
 Every signed event with a valid body is stored, whatever its outcome. A body that fails validation is not an event yet. It gets `422`, nothing is stored, and the log names the failing fields. The `webhook_events` table is the audit trail. An operator finds every event that needs attention with `WHERE outcome IN ('REJECTED', 'NEEDS_REVIEW')`.
 
@@ -1107,7 +1109,7 @@ uv run python -m scripts.simulate_provider --payment-id <PAYMENT_ID> --result SU
 
 ### 6.6 Upgrade path: a real payment gateway
 
-The simulator returns its result without I/O, so §6.1 runs in one transaction. A real gateway needs a network call. The lock must not span that call. The design then becomes two-phase. This variant was built and tested. With an in-process simulator it creates a stuck `PENDING` state, so the service does not ship it (ADR-05).
+The simulator returns its result without I/O, so §6.1 runs in one transaction. A real gateway needs a network call. The lock must not span that call. The design then becomes two-phase. With an in-process simulator, the two-phase variant only adds a `PENDING` state that a crash can leave stuck, so the service does not use it (ADR-05).
 
 ```mermaid
 sequenceDiagram
@@ -1140,7 +1142,7 @@ The upgrade needs four additions:
 3. **`populate_existing` discipline.** Transaction 2 must re-read the booking and the payment under the lock. Without it, a late `FAILED` result can overwrite a `SUCCESS` payment and a `CONFIRMED` booking. The design already applies the rule to every locking read.
 4. **More tests.** A cancel between the two transactions (the guard refuses it). A webhook that lands between them. A gateway timeout. A crash after transaction 1.
 
-The estimate is about three more hours of work (ADR-05). Nothing else in the schema or the webhook path changes, because `settle()` and the inbox stay the same.
+The upgrade changes `PaymentService` and adds a gateway class in place of the simulator. Nothing else in the schema or the webhook path changes, because `settle()` and the inbox stay the same.
 
 ---
 
@@ -1193,10 +1195,10 @@ The estimate is about three more hours of work (ADR-05). Nothing else in the sch
 |---|---|
 | Password hashing | Argon2id through `pwdlib`. The hash string stores its own parameters, so cost can rise later. The library default (Argon2id, 64 MiB, 3 passes, 4 lanes) costs 55 to 67 ms per hash on an idle 8-core developer machine. It is above the OWASP minimum (19 MiB, 2 passes, 1 lane), which costs 22 to 25 ms here. We keep the default. |
 | Password input | NFC-normalised, then hashed. Never stripped, so a leading or trailing space is part of the secret. Two Unicode forms of one visible password give one hash. |
-| Hashing slots | A `threading.BoundedSemaphore` (`HASH_MAX_CONCURRENCY`, default 4) holds the slots. The `hash_slot` dependency is an `async def`. It takes a slot with `acquire(blocking=False)` on the event loop and releases it after the handler returns. A full semaphore answers `503 SERVICE_UNAVAILABLE` with `Retry-After` at once. Four hashes use about 256 MiB at peak. On the 8-core check machine, hashes did not run faster in parallel. One took 55 to 67 ms, and four at once took 230 to 240 ms each. The capacity stayed near 16 hashes per second. More slots add memory use and latency, and no speed. A semaphore that **waits** inside a sync handler holds a pool thread. In the check, a burst of 300 logins delayed `/health/live` by 1.8 s. With the non-blocking slot the worst delay was 0.02 s. |
-| Password rules | 15 to 128 characters. No composition rules. NIST SP 800-63B-4 sets 15 as the minimum for a password used alone and asks for a blocklist check. (`# ponytail: no blocklist → k-anonymity or top-10k list`.) The minimum is a setting. |
-| Auth throttle (P1) | The `limits` library with in-memory storage and a moving window. The `auth_gate` dependency checks it on the event loop, before the request reaches a pool thread. **Per account:** `LOGIN_MAX_FAILURES` failed logins (default 10) in `LOGIN_FAILURE_WINDOW_MINUTES` (default 15). The key is the SHA-256 of the NFC-normalised, lower-cased email. Case variants share one counter, and an unknown email behaves like a known one. **Per IP:** `AUTH_IP_LIMIT_PER_MINUTE` requests across signup, login and token. The default is 30 in production and 300 in development and test, because host-local Docker clients share one bridge address. An exceeded limit returns `429 RATE_LIMITED` with `Retry-After`. A good login clears the account counter. An email of more than 254 characters returns `422` before the gate runs, and a body over 64 KiB returns `413`. |
-| Throttle trade-off | An attacker can slow down one victim's login for 15 minutes by sending bad passwords for that email. The attacker cannot read data or reset the password. The per-IP limit bounds the effort. `limits` keeps an empty entry for every key that it has seen, so memory grows with the number of distinct emails. The fixed-size key and the per-IP limit slow that growth. `# ponytail: in-memory counters are per process and only grow → use Redis storage (limits[redis], with expiry) before public exposure or with more than one worker`. |
+| Hashing slots | A `threading.BoundedSemaphore` (`HASH_MAX_CONCURRENCY`, default 4) holds the slots, behind the `HashSlots` class in `core/security.py`. `auth_gate`, an `async def` dependency (`auth/dependencies.py`), takes a slot with `acquire(blocking=False)` on the event loop and releases it after the handler returns. A full semaphore answers `503 SERVICE_UNAVAILABLE` with `Retry-After` at once. Four hashes use about 256 MiB at peak. On an 8-core machine, hashes did not run faster in parallel. One took 55 to 67 ms, and four at once took 230 to 240 ms each. The capacity stayed near 16 hashes per second. More slots add memory use and latency, and no speed. A semaphore that **waits** inside a sync handler holds a pool thread. A measured burst of 300 logins delayed `/health/live` by 1.8 s. With the non-blocking slot the worst delay was 0.02 s. |
+| Password rules | 15 to 128 characters. No composition rules. NIST SP 800-63B-4 sets 15 as the minimum for a password used alone and asks for a blocklist check. (`# known limit: no blocklist → k-anonymity or top-10k list`.) The minimum is a setting. |
+| Auth throttle (P1) | The `limits` library with in-memory storage and a sliding window counter. The `auth_gate` dependency checks it on the event loop, before the request reaches a pool thread. **Per account:** `LOGIN_MAX_FAILURES` failed logins (default 10) in `LOGIN_FAILURE_WINDOW_MINUTES` (default 15). The key is the SHA-256 of the NFC-normalised, lower-cased email. Case variants share one counter, and an unknown email behaves like a known one. **Per client:** `AUTH_IP_LIMIT_PER_MINUTE` requests across signup, login and token. The client is an IPv4 address or an IPv6 /64 network, because one client owns 2^64 addresses in a /64 and a budget per address would be no budget. An IPv4-mapped IPv6 address counts as its IPv4 address. The default is 30 in production and 300 in development and test, because host-local Docker clients share one bridge address. An exceeded limit returns `429 RATE_LIMITED` with `Retry-After`. A good login clears the account counter. An email of more than 254 characters returns `422` before the gate runs, and a body over 64 KiB returns `413`. |
+| Throttle trade-off | An attacker who knows an email can keep that account locked with about one bad login a minute. The account counter blocks every login for it, the right password included, and each new failure renews the block. The attacker reads nothing and cannot reset the password. The admin account is no exception, and a restart clears the counters. The client limit bounds the effort per source (30 requests a minute in production), and it does not stop many sources. A hard block per (account, client) pair and a higher account-wide threshold that delays and does not block would end this. `# known limit: lockout by account -> block per account and client`. The counters are per process, and the counter strategy deletes a key when its window is over, so memory follows the traffic of the last two windows. (The moving-window strategy keeps a key for every address and email that it has seen. With 20,000 keys it was still holding all of them minutes later, and each expiry pass walked them all.) `# known limit: counters per process -> Redis storage (limits[redis], with expiry) before public exposure or with more than one worker`. A proxy that `FORWARDED_ALLOW_IPS` does not list becomes the client of every request, and all users then share one budget. So does a server on a Unix socket, where a request has no client address and the key is `unknown`. |
 | Access token | HS256 JWT through PyJWT. Claims: `sub` (a string), `iat`, `exp`, `iss`, `aud`. Lifetime 30 minutes. `decode` pins `algorithms=["HS256"]`, passes `issuer` and `audience`, and requires `exp`, `sub`, `iss` and `aud`. Common practice is 5 to 15 minutes. We use 30 because v1 has no refresh token. The lifetime is a setting. |
 | Token secret | `JWT_SECRET`, at least 32 bytes (RFC 7518 section 3.2). The start-up check rejects short or placeholder values outside `development`. PyJWT runs with `enforce_minimum_key_length` on. |
 | Transport | `Authorization: Bearer <token>`. No cookies, so there is no CSRF surface. |
@@ -1205,9 +1207,9 @@ The estimate is about three more hours of work (ADR-05). Nothing else in the sch
 | Authorization | Roles use `require_admin` on the router. Ownership uses the owner predicate inside the service query (§2.2). Admins get no special booking access in v1. |
 | Timing | Unknown email: verify against a dummy hash, so the response time matches a wrong password. Start-up creates the dummy hash with the real hasher. A fake string raises `UnknownHashError`. |
 | Refresh and revocation | None in v1 (assumption A11). A stolen token works for at most 30 minutes. Upgrade: rotating refresh tokens and a `jti` deny-list in Redis. |
-| Secrets | `.env` is git-ignored. `SecretStr` keeps secrets out of `repr` and logs. The image contains no secrets. Compose supplies development-only defaults, and the start-up check rejects them when `ENVIRONMENT=production`. |
+| Secrets | `.env` is git-ignored. `SecretStr` keeps secrets out of `repr` and logs. The image contains no secrets. Compose supplies development-only defaults, publishes the API on `127.0.0.1` only, and the start-up check rejects the defaults when `ENVIRONMENT=production`. A CI run makes random secrets, so the repository publishes none that a production could copy. |
 | Response headers | `NoStoreMiddleware` adds `Cache-Control: no-store` and `Pragma: no-cache` to every response that passes through it. The catch-all `500` handler adds the same two headers, because that response bypasses the middleware (§2.3). The reverse proxy adds HSTS and `X-Content-Type-Options`. |
-| TLS | A reverse proxy terminates TLS. `fastapi run` enables proxy headers by default, but Uvicorn trusts them only from `127.0.0.1` or from `FORWARDED_ALLOW_IPS`. Set that variable to the proxy address or network. **Never `*`.** Production refuses to start with `*`, because `Settings` reads the variable too. With `*`, Uvicorn takes the leftmost `X-Forwarded-For` entry. The client writes that entry, so a client chooses its own IP and its own throttle key. With the proxy address listed, Uvicorn returns the address that the proxy appended. |
+| TLS | A reverse proxy terminates TLS. `fastapi run` enables proxy headers by default, but Uvicorn trusts them only from `127.0.0.1` or from `FORWARDED_ALLOW_IPS`. Set that variable to the proxy address or network. **Never `*`, and never a network of prefix length 0 such as `0.0.0.0/0`.** Production refuses to start with either, because `Settings` reads the variable too. With every hop trusted, Uvicorn takes the leftmost `X-Forwarded-For` entry. The client writes that entry, so a client chooses its own IP and its own throttle key. With the proxy address listed, Uvicorn returns the address that the proxy appended. |
 
 ### 7.3 OWASP API Security Top 10 (2023)
 
@@ -1255,7 +1257,7 @@ Each abuse case is an automated test. The list grows as new cases appear.
 | AB23 | Ten events with different IDs and different provider references, at once | One `APPLIED`, nine `NEEDS_REVIEW` (`reference_mismatch`), no `500` |
 | AB24 | One provider reference on a second payment, also when both events arrive at the same moment | `200`, outcome `REJECTED` (`provider_reference_conflict`), no `500` |
 | AB25 | A password or a name with a control character, a bidirectional override or a lone surrogate (`\ud800` in the JSON), a 200-character password, or a 10,000-character email | `422`. The throttle key is a fixed-size hash for every email that reaches the gate. |
-| AB26 | Start-up in production with `WEBHOOK_SIGNATURE_REQUIRED=false`, a short secret, `FORWARDED_ALLOW_IPS=*` or a missing `ENVIRONMENT` | The application refuses to start |
+| AB26 | Start-up in production with `WEBHOOK_SIGNATURE_REQUIRED=false`, a short secret, `FORWARDED_ALLOW_IPS=*` or `0.0.0.0/0`, a placeholder secret (`dev-only-`, `ci-only-`) or a missing `ENVIRONMENT` | The application refuses to start |
 | AB27 | User B cancels user A's booking while user A holds its row lock | `403` at once, no wait |
 | AB28 | A database constraint error and an unhandled exception in a request, run against a real `fastapi run` process | The log, standard output and standard error hold the constraint name, and no email, hash, query string or other row value |
 | AB29 | The 21st active booking for one user | `409 BOOKING_LIMIT_REACHED` |
@@ -1267,6 +1269,7 @@ Each abuse case is an automated test. The list grows as new cases appear.
 | AB35 | A client sends `X-Forwarded-For: 6.6.6.6, <real address>` through the proxy | The throttle keys on the address that the proxy appended |
 | AB36 | A request with `Content-Length: 5` and `Transfer-Encoding: chunked`, then a 200 KB body, sent to a server that runs the h11 parser | `400`, and the application never runs |
 | AB37 | A signed `FAILED` event whose `failure_reason` holds 500 characters, line breaks and `NUL`, or a `SUCCESS` event that carries a reason | `200 APPLIED`. The stored reason is cleaned and cut at 200 characters, and a paid payment stores none |
+| AB38 | Auth requests from many addresses of one IPv6 /64, or from `::ffff:a.b.c.d` and `a.b.c.d` | One client budget for the /64, and one for the IPv4 address. The request over the limit gets `429` |
 
 ### 7.5 Privacy notes (informational, not legal advice)
 
@@ -1274,7 +1277,7 @@ The service stores an email address, an optional name, an optional phone number 
 
 - **Notice and consent.** A plain-language notice must list the data and the purpose. Withdrawing consent must be as easy as giving it. v1 has no consent record.
 - **Purpose limitation.** The service uses personal data only to run bookings and payments.
-- **Retention.** The Rules ask for erasure after withdrawal. They also require some logs to be kept for one year. Counsel must settle this tension. v1 logs IDs only.
+- **Retention.** The Rules ask for erasure after withdrawal. They also require some logs to be kept for one year. Counsel must settle this tension. v1 logs IDs, and the client key of a failed login or a throttled request.
 - **Breach handling.** The operator must tell affected people and the Board and send a detailed report within 72 hours. v1 has no runbook for this.
 - **Children.** Users under 18 need verifiable parental consent. v1 does not check age.
 
@@ -1315,7 +1318,7 @@ The service stores an email address, an optional name, an optional phone number 
 
 ### 8.2 Observability
 
-Five questions guide the signals.
+Six questions guide the signals.
 
 | # | On-call question | Signal |
 |---|---|---|
@@ -1324,14 +1327,15 @@ Five questions guide the signals.
 | Q3 | Is the webhook healthy? | `webhook.processed`, `webhook.duplicate`, `webhook.rejected` (with `detail`) and `webhook.needs_review` (`ERROR`) and `webhook.invalid` (`WARNING`, with the failing field names) and `webhook.unavailable` (`WARNING`, with the event and payment IDs, when the retries ran out and the answer was `503`). |
 | Q4 | Do payments stay stuck? | SQL: `SELECT id FROM payments WHERE status = 'PENDING' AND created_at < now() - interval '15 minutes'`. A P2 job alerts on it. |
 | Q5 | Is the API slow or failing? | An `http.request` event per request: `method`, `route` (the template), `status`, `duration_ms`. |
+| Q6 | Is someone guessing passwords? | `auth.login_failed` and `auth.throttled` (`WARNING`). Both carry the client key (an IPv4 address or an IPv6 /64) and a short account key (12 hex characters of a hash, never the email). `auth.throttled` adds the scope (`ip` or `account`) and `retry_after`. |
 
 | Topic | Design |
 |---|---|
 | Format | JSON on standard output through `structlog`. Fields: `timestamp` (UTC), `level`, `event`, `request_id`, `user_id` (when known), domain IDs, `duration_ms`. The `LOG_FORMAT` setting picks `json` (the default) or `console`. |
 | Request ID | `RequestIdMiddleware` accepts `X-Request-ID` when it matches `^[A-Za-z0-9-]{8,64}$`. Otherwise it generates a UUID. It stores the ID in `scope["state"]` and returns it in the response header and in every problem body. The catch-all `500` response bypasses the middleware, so its handler copies the ID into the `X-Request-ID` header itself. The middleware and the `500` handler do not use a contextvar. A middleware clears its binding before the `500` handler runs, and a sync dependency binds inside a pool thread. The user ID goes into `scope["state"]` the same way. A business event that a service logs in a pool thread still needs the request ID. An async dependency, `bind_request_id`, binds it into the log context. It runs on the event loop in the context of the request. The thread of a sync handler starts from a copy of that context. |
 | Levels | `info` for business events. `warning` for a handled degradation (duplicate, throttle hit, fail-open cache). `error` for a broken invariant (`NEEDS_REVIEW`, unhandled exception). A `REJECTED` webhook event logs at `error`, except `unknown_payment`, which logs at `warning`, because a delivery can race ahead of a commit. |
-| Redaction | A processor removes keys that match `password`, `token`, `secret`, `authorization` and `signature`. The code never logs raw request bodies. It never logs an email, a phone number or a name. Log lines carry IDs. JSON output also escapes line breaks, which blocks log injection. |
-| Exceptions | The exception renderer runs with `show_locals=False`, because the default renderer prints local variables, a password among them. SQLAlchemy runs with `hide_parameters=True`. A processor walks `__cause__` and `__context__`. It replaces every database error with its class, SQLSTATE and constraint name. PostgreSQL error text echoes row values such as `Key (email)=(a@x.in)`. Uvicorn has its own loggers. A real `fastapi run` process printed the query string in its access log and printed the `DETAIL` line of an unhandled `IntegrityError` in the `uvicorn.error` traceback. `configure_logging()` therefore disables `uvicorn.access` and drops the traceback of `uvicorn.error` records. It must run in the lifespan start-up, because Uvicorn applies its logging configuration after the module import. `# ponytail: the messages of other unhandled exceptions are logged as they are → scrub every non-AppError message if such an exception can carry personal data`. |
+| Redaction | A processor removes keys that match `password`, `token`, `secret`, `authorization` and `signature`. The code never logs raw request bodies. It never logs an email, a phone number or a name. Log lines carry IDs. The one personal datum is the client key (an IPv4 address or an IPv6 /64) on a failed login and a throttled request, so an operator can find the source of a run of bad logins. JSON output also escapes line breaks, which blocks log injection. |
+| Exceptions | The exception renderer runs with `show_locals=False`, because the default renderer prints local variables, a password among them. SQLAlchemy runs with `hide_parameters=True`. A processor walks `__cause__` and `__context__`. It replaces every database error with its class, SQLSTATE and constraint name. PostgreSQL error text echoes row values such as `Key (email)=(a@x.in)`. Uvicorn has its own loggers. A real `fastapi run` process printed the query string in its access log and printed the `DETAIL` line of an unhandled `IntegrityError` in the `uvicorn.error` traceback. `configure_logging()` therefore disables `uvicorn.access` and drops the traceback of `uvicorn.error` records. It must run in the lifespan start-up, because Uvicorn applies its logging configuration after the module import. `# known limit: the messages of other unhandled exceptions are logged as they are → scrub every non-AppError message if such an exception can carry personal data`. |
 | Metrics (P2) | Rate, errors and duration per route through a Prometheus instrumentator. Labels use route templates and status classes. IDs never appear as labels. |
 | Health | `/health/live` (process is up) and `/health/ready` (database answers). Compose and Docker use them. The live handler is `async def`, so it answers even when every pool thread is busy. |
 | Access log | `fastapi run` has no option to turn off Uvicorn's access log, so `configure_logging()` disables the `uvicorn.access` logger. The `http.request` event replaces it. It logs the method, the route template, the status and the duration, and never the query string. The middleware reads the status from the response start message. It logs `500` when the app raises, because the `500` handler's response never reaches it. |
@@ -1369,15 +1373,13 @@ Compose names the variables that the containers need. It gives each a developmen
 | `DB_STATEMENT_TIMEOUT_MS`, `DB_LOCK_TIMEOUT_MS` | `5000`, `2000` | Two lock timeouts stay inside the 5-second webhook budget (§6.4). |
 | `LOG_LEVEL`, `LOG_FORMAT` | `INFO`, `json` | |
 | `DOCS_ENABLED` | `true` in `development` and `test`, `false` in `production` | |
-| `FORWARDED_ALLOW_IPS` | `127.0.0.1,::1` (Uvicorn's default) | The reverse proxy address or network. Production refuses `*` (§7.2). Uvicorn and `Settings` both read the variable. |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1,::1` (Uvicorn's default) | The reverse proxy address or network. Production refuses `*` and any network of prefix length 0, such as `0.0.0.0/0` (§7.2). Uvicorn and `Settings` both read the variable. |
 | `CORS_ORIGINS` | empty | Comma-separated allow-list. The field is `NoDecode` with a splitting validator. |
-| `REDIS_URL` | empty | Empty disables Redis (P2). |
-| `RATE_LIMIT_ENABLED` | `false` | P2. Other rate limits (§8.4). |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | none | Used by the seed script only. Compose supplies `admin@example.com` and a development password. `ADMIN_EMAIL` is a plain string. `EmailStr` accepts `example.com` and rejects `.local` and `.test`. In production the seed refuses a placeholder or a password shorter than `PASSWORD_MIN_LENGTH`. |
 | `TEST_DATABASE_URL` | `postgresql+psycopg://eve:eve-dev-password@localhost:5432/eve_test` | Tests only. This is the compose database user, which can create `eve_test`. With your own PostgreSQL, use a role that has `CREATEDB`. The `test` compose service overrides it with the host `db`. |
 | `SEED_ON_START` | `true` in compose | Read by the compose `migrate` service. The API ignores it. |
 
-The start-up check stops the application in these cases. `ENVIRONMENT` is missing. A secret is missing or shorter than 32 bytes. A secret is a placeholder and `ENVIRONMENT` is not `development`. A value is a placeholder when it starts with `dev-only-`, `whsec_demo_only_` or `change-me`, which covers the compose defaults and the example secret in §6.5. In production, `WEBHOOK_SIGNATURE_REQUIRED` is `false` or `PAYMENT_ALLOW_SIMULATE_OVERRIDE` is `true`. `DOCS_ENABLED` defaults to `false` in production, and an operator can turn it on. A test covers each rule.
+The start-up check stops the application in these cases. `ENVIRONMENT` is missing. A secret is missing or shorter than 32 bytes. A secret is a placeholder and `ENVIRONMENT` is not `development`. A value is a placeholder when it starts with `dev-only-`, `whsec_demo_only_`, `change-me` or `ci-only-`, which covers the compose defaults, the example secret in §6.5 and the throwaway secrets of a CI run. In production, `WEBHOOK_SIGNATURE_REQUIRED` is `false`, `PAYMENT_ALLOW_SIMULATE_OVERRIDE` is `true`, or `FORWARDED_ALLOW_IPS` trusts every address (`*` or a network of prefix length 0). `DOCS_ENABLED` defaults to `false` in production, and an operator can turn it on. A test covers each rule.
 
 ### 8.4 Rate limiting
 
@@ -1386,13 +1388,13 @@ The login throttle (P1) is in §7.2. The other limits are P2.
 | Endpoint | Limit | Key |
 |---|---|---|
 | `POST /auth/login`, `/auth/token` | `LOGIN_MAX_FAILURES` failures per `LOGIN_FAILURE_WINDOW_MINUTES` | Account, by the hashed email (P1) |
-| `POST /auth/signup`, `/auth/login`, `/auth/token` | `AUTH_IP_LIMIT_PER_MINUTE` | Client IP (P1) |
+| `POST /auth/signup`, `/auth/login`, `/auth/token` | `AUTH_IP_LIMIT_PER_MINUTE` | Client: an IPv4 address or an IPv6 /64 (P1) |
 | `POST /bookings/` | 20 per minute | User (P2) |
 | `POST /payments/` | 10 per minute | User (P2) |
 | Everything else | 120 per minute | Client IP (P2) |
 | `POST /payments/webhook/` | Exempt. The signature and the body cap protect it. | — |
 
-Storage is in memory without Redis and Redis with `REDIS_URL`. An exceeded limit returns `429 RATE_LIMITED` with `Retry-After` in the problem format. The limiter is the `limits` library behind an `async def` dependency (`auth_gate`) of about 25 lines. It is not `slowapi`. The client IP comes from the proxy headers. Set `FORWARDED_ALLOW_IPS` to the proxy address or network, and never to `*` (production refuses it), because `*` lets a client choose its own IP. In-memory counters are per process and only grow, so use Redis when you run more than one worker or expose the service publicly.
+Storage is in memory. With Redis (P2), a `REDIS_URL` setting would select it. An exceeded limit returns `429 RATE_LIMITED` with `Retry-After` in the problem format. The limiter is the `limits` library behind an `async def` dependency (`auth_gate`) of about 25 lines. It is not `slowapi`. The client address comes from the proxy headers. Set `FORWARDED_ALLOW_IPS` to the proxy address or network, and never to `*` or a network of prefix length 0 (production refuses both), because they let a client choose its own address. In-memory counters are per process. The counter strategy deletes a key when its window is over, so memory follows the traffic of the last two windows. Use Redis when you run more than one worker or expose the service publicly.
 
 ### 8.5 Caching (P2)
 
@@ -1406,9 +1408,9 @@ Cache-aside on `GET /centres/`, `GET /centres/{id}` and `GET /tests/`. The TTL i
 
 | Level | Scope | Share | Speed |
 |---|---|---|---|
-| Unit | Pure functions: `settle`, `state`, `policy`, `signature`, `security`, throttle, pagination, error catalogue, settings. No database. | about 35% | Milliseconds |
-| Integration | HTTP through the real app against real PostgreSQL. | about 60% | Tens of milliseconds |
-| Concurrency | Threads against the real app. Races that need real commits. | about 5% | Under a second each |
+| Unit | Pure functions: `settle`, `state`, `policy`, `signature`, `security`, throttle, pagination, error catalogue, settings. No database. | about 53% | Milliseconds |
+| Integration | HTTP through the real app against real PostgreSQL. | about 45% | Tens of milliseconds |
+| Concurrency | Threads against the real app. Races that need real commits, and a real deadlock. | about 1% (13 tests, run 20 times in CI) | Under two seconds each |
 
 Rules: real PostgreSQL only (never SQLite, because locks, partial indexes and `ON CONFLICT` differ). Tests assert state and outcomes, not calls. Each test reads as one specification (`test_<unit>_<scenario>_<result>`) and follows Arrange, Act, Assert. Two test doubles are allowed: a fixed clock and a chosen simulator result.
 
@@ -1432,24 +1434,24 @@ Rules: real PostgreSQL only (never SQLite, because locks, partial indexes and `O
 
 | Group | Cases (each a named test) | Covers |
 |---|---|---|
-| Auth (AB6, AB19, AB21, AB22, AB25, AB35) | Signup: happy path, duplicate, duplicate in other case, 14-character password, leading spaces kept, extra `role`, no hash in response. Signup edge cases: `NUL` and control characters, concurrent double signup, throttle. Login on `/auth/login` and `/auth/token`: happy path, wrong password, unknown email, the seeded admin (`admin@example.com`) on both endpoints, token claims. Token failures: expired, future `iat`, `alg: none`, wrong secret. Throttle and limits: account throttle, case variants share one counter, IP throttle, a spoofed `X-Forwarded-For` does not change the key. A 10,000-character email returns `422`, and a 100,000-character email returns `413`. Every hashing slot taken returns `503` at once. `GET /users/me`. | PDF §1, §4 |
-| Catalog (AB2, AB17, AB18, AB33) | Public read. Admin create and update. Patient forbidden. Duplicate. A centre without a city. Price validation. A lower-case or long currency code gives `422`. Price upsert is idempotent, sets `updated_at`, and returns `201` on create and `200` on update. Unknown centre or test on `PUT`. Soft `DELETE` and restore by `PATCH`. Repeated `DELETE` returns `204`. Inactive rows hidden. Filters by city, test and text. `%` and `_` in `q` match literally. Price shown when the list filters by test. Empty `PATCH` and `PATCH` with `null` return `422`. Pagination bounds. Detail page query count. | PDF §2 |
-| Bookings (AB1, AB3, AB7, AB27, AB29) | The cases on the card in §5.4, plus list, get, cancel and ownership. `Location` is a path and ignores a hostile `Host` header. An appointment of `9999-12-31T23:59:59-14:00` returns `422` without an error. | PDF §3, §4 |
-| Payments (AB4, AB5, AB20, AB30, AB31) | The cases on the card in §5.4, plus a cancelled booking that keeps a `SUCCESS` payment (replay `200`). | PDF §2, §4 |
-| Webhook (AB8 to AB13, AB16, AB23, AB24, AB32, AB37) | Valid `SUCCESS`. Valid `FAILED`. Sequential duplicate. 20 concurrent duplicates. Different event IDs with one result. Different IDs with different references. Conflicting terminal result. Same reference on a second payment, also at the same moment (the retry path). A payment settled without a reference stores the first one. Unknown extra fields. Signed body with an invalid field returns `422` and stores nothing. `NUL` in `event_id` and in the reference. A failure reason with control characters is cleaned, and a paid payment stores none. Unknown payment (stored, redelivery is a duplicate). Missing signature. Wrong signature. Stale timestamp. Changed body. Signature not required outside production. Amount mismatch. Currency mismatch. Oversized body, with `Content-Length` and chunked. Malformed JSON. Settles a `PENDING` payment. Failure rolls back and leaves no event row. A lock timeout returns `503` and is not retried. A deadlock is retried. The documented signature example. Simulator script with retries. | PDF §3, §4 |
-| Authorization | AB1 to AB6, AB14, AB15, AB20 and AB27 from §7.4, run against every protected route. | PDF §4 |
-| State machine | Every booking transition (a 4 × 4 grid). Every row of the `settle()` table. | PDF §3, §2 |
-| Security units | Hash and verify (NFC, no stripping). The hashing semaphore never runs more slots than it has and turns surplus callers away at once. Token encode and decode, with the real clock and the key-length option. Signature sign and verify. Throttle key and limits. The dummy hash costs as much as a real one. | PDF §1, §3 |
+| Auth (AB6, AB19, AB21, AB22, AB25, AB35, AB38) | Signup: happy path, duplicate, duplicate in other case, 14-character password, leading spaces kept, extra `role`, no hash in response. Signup edge cases: `NUL` and control characters, concurrent double signup, throttle. Login on `/auth/login` and `/auth/token`: happy path, wrong password, unknown email, the seeded admin (`admin@example.com`) on both endpoints, token claims. Token failures: expired, future `iat`, `alg: none`, wrong secret. Throttle and limits: account throttle, case variants share one counter, IP throttle, a spoofed `X-Forwarded-For` does not change the key, one budget for every address of an IPv6 /64. A failed login and a refusal are logged with the client and a short account key, never the email. A 10,000-character email returns `422`, and a 100,000-character email returns `413`. Every hashing slot taken returns `503` at once. `GET /users/me`. | Brief §1, §6 |
+| Catalog (AB2, AB17, AB18, AB33) | Public read. Admin create and update. Patient forbidden. Duplicate. A centre without a city. Price validation. A lower-case or long currency code gives `422`. Price upsert is idempotent, sets `updated_at`, and returns `201` on create and `200` on update. Unknown centre or test on `PUT`. Soft `DELETE` and restore by `PATCH`. Repeated `DELETE` returns `204`. Inactive rows hidden. Filters by city, test and text. `%` and `_` in `q` match literally. Price shown when the list filters by test. Empty `PATCH` and `PATCH` with `null` return `422`. Pagination bounds. Detail page query count. | Brief §2 |
+| Bookings (AB1, AB3, AB7, AB27, AB29) | The cases on the card in §5.4, plus list, get, cancel and ownership. `Location` is a path and ignores a hostile `Host` header. An appointment of `9999-12-31T23:59:59-14:00` returns `422` without an error. | Brief §3, §6 |
+| Payments (AB4, AB5, AB20, AB30, AB31) | The cases on the card in §5.4, plus a cancelled booking that keeps a `SUCCESS` payment (replay `200`). | Brief §4, §6 |
+| Webhook (AB8 to AB13, AB16, AB23, AB24, AB32, AB37) | Valid `SUCCESS`. Valid `FAILED`. Sequential duplicate. 20 concurrent duplicates. Different event IDs with one result. Different IDs with different references. Conflicting terminal result. Same reference on a second payment, also at the same moment (the retry path). A payment settled without a reference stores the first one. Unknown extra fields. Signed body with an invalid field returns `422` and stores nothing. `NUL` in `event_id` and in the reference. A failure reason with control characters is cleaned, and a paid payment stores none. Unknown payment (stored, redelivery is a duplicate). Missing signature. Wrong signature. Stale timestamp. Changed body. Signature not required outside production. Amount mismatch. Currency mismatch. Oversized body, with `Content-Length` and chunked. Malformed JSON. Settles a `PENDING` payment. Failure rolls back and leaves no event row. A lock timeout returns `503` and is not retried. A deadlock is retried: a fake error tests the rule, and two real sessions that PostgreSQL puts in a deadlock test the whole path (`tests/integration/test_db_retries.py`). A delivery that runs out of retries logs `webhook.unavailable`. The documented signature example. Simulator script with retries. | Brief §5, §6 |
+| Authorization | AB1 to AB6, AB14, AB15, AB20 and AB27 from §7.4, run against every protected route. | Brief §6 |
+| State machine | Every booking transition (a 4 × 4 grid). Every row of the `settle()` table. | Brief §3, §4 |
+| Security units | Hash and verify (NFC, no stripping). The hashing semaphore never runs more slots than it has and turns surplus callers away at once. Token encode and decode, with the real clock and the key-length option. Signature sign and verify. Throttle key and limits. The dummy hash costs as much as a real one. | Brief §1, §5 |
 | Configuration | Production refuses each unsafe setting (AB26), a placeholder secret (including the §6.5 example) and a short secret. `ENVIRONMENT` is required. `CORS_ORIGINS` parses a comma list. `.env` is read when it exists. | Bonus |
 | Logging | Each event in §8.2 appears, with the request ID. No secret, email, query string or row value appears in the structlog output. The same holds for the standard output and standard error of a real `fastapi run` process (AB28). A constraint error logs only its name. The catch-all `500` body and its `X-Request-ID` header carry the request ID, and the response has `Cache-Control: no-store`. The `http.request` event for a `500` logs status `500`. | Bonus |
 | OpenAPI and HTTP | Every operation has a summary, a unique `operationId` and its error responses. The route inventory matches §5.2. `HEAD` works on every `GET` route (AB34). `Cache-Control: no-store` is on every response, `404`, `405`, `422` and the catch-all `500` included. A `405` lists every method of the path in `Allow`. No response redirects. A request that names both `Content-Length` and `Transfer-Encoding` gets `400` (AB36). | Bonus |
-| Database | Migrations run from empty. `alembic check` is clean. The schema from the migrations equals the schema from the models, constraints and indexes included. Every foreign key has an index (query in §3.6). The schema has no native enum type. Each rule in §3.5 rejects a bad row and accepts a good one. Seed runs twice without error. | PDF §2, Bonus |
+| Database | Migrations run from empty. `alembic check` is clean. The schema from the migrations equals the schema from the models, constraints and indexes included. Every foreign key has an index (query in §3.6). The schema has no native enum type. Each rule in §3.5 rejects a bad row and accepts a good one. Seed runs twice without error. | Brief §2, §3 |
 
-The suite holds about 1,370 tests. The grids (every booking transition, every row of `settle()`, every rejected input) run each case as its own test, so the count is higher than the number of behaviours.
+The suite holds about 1,400 tests. The grids (every booking transition, every row of `settle()`, every rejected input) run each case as its own test, so the count is higher than the number of behaviours.
 
 ### 9.4 Tooling and gates
 
-- `pytest --cov=app --cov-report=term-missing --cov-fail-under=85`. The 85% overall gate fails the build. Each checkpoint also reports the six logic modules (`service` modules, `state`, `policy`, `settlement`, `signature`, `security`). The target for them is 90%.
+- `pytest --cov=app --cov-report=term-missing --cov-fail-under=85`. The 85% overall gate fails the build. `make coverage` also gates the modules that hold the rules at 90% each: the `service` modules, `state`, `policy`, `settlement`, `signature` and `security`.
 - Ruff rule families: `E, F, W, I, N, UP, B, A, C4, C90, SIM, PL, RUF, S, PT, TID, DTZ, T20, PERF, FAST`. `DTZ` blocks naive datetimes. `T20` blocks `print`. `FAST` adds FastAPI checks.
 - `mypy --strict` with the Pydantic plugin is the type gate. `ty` is still a 0.x beta, so it stays optional.
 - `pip-audit` scans the locked dependencies. It is necessary but not sufficient, because advisory databases lag.
@@ -1485,7 +1487,8 @@ CMD ["pytest", "-q"]
 FROM python:3.12-slim-trixie
 RUN useradd --uid 10001 --create-home app
 WORKDIR /srv
-COPY --from=builder --chown=app:app /srv /srv
+# Root owns the code. The app user reads it and cannot rewrite it.
+COPY --from=builder /srv /srv
 ENV PATH="/srv/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 USER app
 EXPOSE 8000
@@ -1538,7 +1541,8 @@ services:
 
   api:
     <<: *app
-    ports: ["${API_PORT:-8000}:8000"]
+    # Loopback only: the stack runs with public passwords, and Docker bypasses the host firewall.
+    ports: ["127.0.0.1:${API_PORT:-8000}:8000"]
     depends_on:
       migrate: {condition: service_completed_successfully}
 
@@ -1573,7 +1577,7 @@ services:
 |---|---|
 | `db` | PostgreSQL 17 with a named volume at `/var/lib/postgresql/data` and a `pg_isready` health check. It publishes no port. (PostgreSQL 18 mounts `/var/lib/postgresql` instead.) |
 | `migrate` | Runs `alembic upgrade head`, then the idempotent seed when `SEED_ON_START=true` (the compose default). Exits when done. |
-| `api` | Starts after `migrate` completes successfully. Publishes port 8000. |
+| `api` | Starts after `migrate` completes successfully. Publishes port 8000 on `127.0.0.1` only, because the stack runs with public passwords. |
 | `test` | Behind the profile `test`. Builds the `test` stage and runs `pytest` against the `db` service. The fixture creates `eve_test`, because the compose user is a superuser. |
 | `redis` | Optional (P2). Image `redis:8`. Behind the compose profile `cache`. |
 
@@ -1586,16 +1590,16 @@ Six details matter:
 - **Reset.** `docker compose down -v` deletes the volumes of the project that Compose finds. Run it from the project folder, or name the project and the file (`-p eve-healthcare -f docker-compose.yml`). A wrong folder means a wrong project.
 - **Build context.** `.dockerignore` lists `.git`, `.venv*/`, caches, `.env`, `docs/` and the assignment PDF. The project folder also holds virtual environments and caches, many megabytes together. Without the file, Docker sends all of it to the daemon on every build.
 
-The stack is checked from a clean checkout. `docker compose up --build --wait` is healthy in about 20 seconds on an idle machine with no `.env` file (21 seconds in the last run). `migrate` finishes before `api` starts, and the seeded admin is in the database. Values from `.env` reach the container, and a `DATABASE_URL` in `.env` does not override the compose value. The `test` profile runs the whole suite in the container. The container runs as UID 10001. The `db` service publishes no port, and with the override it publishes the port that `DB_PORT` names on `127.0.0.1`.
+The stack is checked from a clean checkout. `docker compose up --build --wait` is healthy in about 20 to 30 seconds with no `.env` file. `migrate` finishes before `api` starts, and the seeded admin is in the database. Values from `.env` reach the container, and a `DATABASE_URL` in `.env` does not override the compose value. The `test` profile runs the whole suite in the container. The container runs as UID 10001. The `db` service publishes no port, and with the override it publishes the port that `DB_PORT` names on `127.0.0.1`.
 
 ### 10.2 Continuous integration
 
-GitHub Actions run on every push and pull request to `main`. Jobs run in parallel.
+GitHub Actions run on every push to `main` and on every pull request. Jobs run in parallel.
 
 | Job | Steps |
 |---|---|
-| `quality` | `uv sync --frozen`, `ruff check`, `ruff format --check`, `mypy app` |
-| `test` | PostgreSQL 17 service. `alembic upgrade head`. `alembic check`. `pytest` with the coverage gate. Then the concurrency group, 20 times in a row. |
+| `quality` | `uv sync --frozen`, `ruff check`, `ruff format --check`, `mypy` (it checks `app` and `scripts`, as `pyproject.toml` says) |
+| `test` | PostgreSQL 17 service. Random throwaway secrets for the run. `alembic upgrade head`. `alembic check`. `pytest` with the coverage gate. Then the concurrency group, 20 times in a row. |
 | `audit` | `pip-audit` on the locked dependencies |
 | `docker` | Build the image. `docker compose up --build --wait` with no `.env` file. `curl /health/ready`. Log in as the seeded admin and check that the sample catalog has 5 centres. Then `docker compose --profile test run --rm test`. |
 | `compat` (P2) | Run the `test` job again on Python 3.14 to catch forward-compatibility problems early. |
@@ -1608,14 +1612,14 @@ The workflow sets `permissions: contents: read` and cancels superseded runs. A r
 - One vertical slice per commit or pull request. Aim for about 100 lines, and never above 300 without a reason.
 - Conventional Commits. The body explains why. Example: `feat(payments): settle payments through one idempotent function`.
 - Commit `uv.lock` and the generated `requirements.txt` and `requirements-dev.txt`. Never commit `.env`, `.venv` or caches.
-- `.gitignore` lists `.env`, `.venv*/`, caches and the assignment PDF.
+- `.gitignore` lists `.env` and its variants (but not `.env.example`), `.venv*/`, caches, editor files and the assignment PDF.
 - Every commit passes lint, types and tests.
 - Tag `v0.1.0` at submission. The tag matches `version` in `pyproject.toml`.
 
 
 ## 11. Design decisions
 
-Each record is short. The public `docs/ARCHITECTURE.md` keeps this table. A file per record in `docs/decisions/` is an option after approval, and the plan reserves no task or hours for it.
+Each record names the decision, its status, the alternatives that it rejected and its consequence. The table holds all 22. A file per record in `docs/decisions/` is an option if the list grows.
 
 | ID | Decision | Status | Rejected alternatives | Consequence |
 |---|---|---|---|---|
@@ -1627,7 +1631,7 @@ Each record is short. The public `docs/ARCHITECTURE.md` keeps this table. A file
 | ADR-06 | **Webhook: HMAC signature on the raw body, required by default**. A flat contract that ignores unknown fields. A transactional inbox that records every signed event that has a valid body. Four idempotency layers. | Accepted | Check-then-insert. A signature-free webhook. An asynchronous inbox worker. A nested event envelope with types. `4xx` for business failures. | Exactly-once effect under at-least-once delivery. Duplicates are cheap. Business failures get `200`, so the provider does not retry them. |
 | ADR-07 | **Wrong owner returns `403`**. | Accepted | `404` to hide existence. | Clear contract. Random UUIDs prevent enumeration. UUIDv7 keeps 74 random bits. One helper flips it. |
 | ADR-08 | **Login: JSON `POST /auth/login` plus the OAuth2 form `POST /auth/token`**. | Accepted | Form only. JSON only. | Swagger *Authorize* works and JSON clients work. One service method sits behind both. |
-| ADR-09 | **A failed payment ends the booking as `FAILED`**. | Accepted | Keep `PENDING` for retry. | Matches the PDF state names. The user books again. The alternative is one change in `settle()` (§4.2). |
+| ADR-09 | **A failed payment ends the booking as `FAILED`**. | Accepted | Keep `PENDING` for retry. | Matches the state names in the brief. The user books again. The alternative is one change in `settle()` (§4.2). |
 | ADR-10 | **Errors use RFC 9457 problem details with a stable `code`**. | Accepted | A custom `{error: {...}}` envelope. | A standard format. One handler module. |
 | ADR-11 | **Data types:** UUIDv4 keys, `numeric(10,2)` money, `varchar(32)` plus a named `CHECK` for statuses, `timestamptz` in UTC. | Accepted | `bigint` identity keys, native enums, floats. | Exact money. Simple status changes. UUIDv4 fragments indexes past about 10 million rows. |
 | ADR-12 | **`limit`/`offset` pagination with caps.** | Accepted | Keyset pagination. | Familiar to clients. Indexes are ready for keyset. |
@@ -1635,9 +1639,9 @@ Each record is short. The public `docs/ARCHITECTURE.md` keeps this table. A file
 | ADR-14 | **No Celery. Redis optional (P2)**. | Accepted | Celery worker for webhooks. Mandatory Redis. | Fewer containers. Deterministic state. The inbox makes a worker additive. |
 | ADR-15 | **Tooling:** `uv`, Ruff, `mypy --strict`, pytest on real PostgreSQL, GitHub Actions. | Accepted | pip and requirements files as the source. SQLite tests. | Reproducible builds. Realistic tests. A generated `requirements.txt` serves readers without `uv`. |
 | ADR-16 | **Runtime:** Python 3.12 or newer, SQLAlchemy 2.0.54 (below 2.1), PostgreSQL 17, `fastapi run` in a non-root container. | Accepted | Python 3.14. SQLAlchemy 2.1. PostgreSQL 18. | Matches the development machine. Avoids a release that is days old. |
-| ADR-17 | **Paths follow the PDF** (`/payments/`, `/payments/webhook/`). No version prefix. Every route answers both slash spellings, and `HEAD` wherever `GET` works, without a redirect. | Accepted | `/api/v1/...`. Default slash redirects. | Matches the PDF exactly. Webhook senders that treat a redirect as a failure work. RFC 9110 is met. A version prefix costs one line later. |
+| ADR-17 | **Paths follow the brief** (`/payments/`, `/payments/webhook/`). No version prefix. Every route answers both slash spellings, and `HEAD` wherever `GET` works, without a redirect. | Accepted | `/api/v1/...`. Default slash redirects. | Matches the brief exactly. Webhook senders that treat a redirect as a failure work. RFC 9110 is met. A version prefix costs one line later. |
 | ADR-18 | **Simulator with a success rate, an override outside production and an asynchronous `PENDING` mode.** | Accepted | Random result only. | The webhook becomes demonstrable and testable end to end. |
 | ADR-19 | **Catalog rows are deactivated, never deleted** (A14). | Accepted | Hard delete with cascade. | Booking history stays valid. `DELETE` returns `204` and `PATCH` restores. |
 | ADR-20 | **Scope: production quality over the assignment's 3 to 4 hour estimate.** All six sections, the endpoints that the design needs, tests for every one, and documentation. | Accepted | A minimal scope with fewer tests and no hardening. | More work, and a service whose behaviour under repeats and races is tested. |
-| ADR-21 | **Auth gate: one `async def` dependency checks the throttle and takes a hashing slot without waiting, before the request needs a pool thread.** | Accepted | A blocking semaphore in the handler. A middleware for the throttle. | The thread pool stays free during a login burst (0.02 s against 1.8 s for `/health/live` in the check). The dependency sees the parsed body, so it can key on the email. |
+| ADR-21 | **Auth gate: one `async def` dependency checks the throttle and takes a hashing slot without waiting, before the request needs a pool thread.** | Accepted | A blocking semaphore in the handler. A middleware for the throttle. | The thread pool stays free during a login burst (0.02 s against 1.8 s for `/health/live` in a burst of 300 logins). The dependency sees the parsed body, so it can key on the email. |
 | ADR-22 | **Request context lives in `scope["state"]`. Response headers that every response needs (`no-store`, request ID) come from pure ASGI middleware. The catch-all `500` handler sets the same headers itself.** | Accepted | Contextvars. Headers set in dependencies. | The catch-all `500` handler and every error response see the same values. |
