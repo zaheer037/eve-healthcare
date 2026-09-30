@@ -1,4 +1,4 @@
-"""The query budget of every endpoint (architecture §5.2, success criterion SC6).
+"""The query budget of every endpoint (architecture §5.2).
 
 The budget is the number of SQL statements on the success path after the authentication lookup.
 This is the one table of the 24 budgets. Other test modules check the same numbers next to the

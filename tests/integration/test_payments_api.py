@@ -281,7 +281,7 @@ def test_without_an_override_the_success_rate_setting_decides(
 def test_without_simulate_a_payment_always_ends_in_success_or_failed(
     client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
 ) -> None:
-    """Success criterion SC1. With the default success rate, the dice decide, and the answer is
+    """With the default success rate, the dice decide, and the answer is
     always a settled payment: 201, SUCCESS or FAILED, and never a pending 202."""
     bookings = [
         make_booking(db_session, user=patient, appointment_at=future_slot(2 + day))

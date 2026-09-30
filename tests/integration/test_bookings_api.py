@@ -30,7 +30,7 @@ from tests.factories import (
     make_payment,
     make_user,
 )
-from tests.support import AUTH_LOOKUP, QueryCounter, run_concurrently
+from tests.support import AUTH_LOOKUP, QueryCounter, run_concurrently, wait_for_a_lock_waiter
 
 Headers = dict[str, str]
 
@@ -648,14 +648,12 @@ def test_the_owner_waits_for_the_row_lock_and_then_cancels(
         caller = threading.Thread(
             target=lambda: answers.append(client.post(cancel_url(booking), headers=patient_headers))
         )
-        started = time.perf_counter()
         caller.start()
-        time.sleep(0.3)  # the request is now waiting for the row
+        wait_for_a_lock_waiter(db_engine)  # the request is now waiting for the row
         assert answers == []
         holder.rollback()  # release the lock
         caller.join(timeout=5)
     assert [response.status_code for response in answers] == [200]
-    assert time.perf_counter() - started >= 0.3
 
 
 @pytest.mark.concurrency

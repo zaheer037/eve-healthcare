@@ -2,12 +2,13 @@
 
 import json
 import threading
+import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from types import TracebackType
 from typing import Any, Self
 
-from sqlalchemy import Engine, event
+from sqlalchemy import Engine, event, text
 
 from app.core.config import Settings
 
@@ -17,6 +18,28 @@ SettingsFactory = Callable[..., Settings]
 # document leave it out, so `QueryCounter(engine, ignore=(AUTH_LOOKUP,))` counts what the handler
 # itself runs.
 AUTH_LOOKUP = "WHERE users.id = "
+
+
+def wait_for_a_lock_waiter(engine: Engine, *, timeout: float = 5.0) -> None:
+    """Return when PostgreSQL shows a backend of this database that waits for a lock.
+
+    A test that starts a request behind a held lock must know that the request reached the lock.
+    A fixed sleep only guesses, and it guesses wrong on a busy machine.
+    """
+    deadline = time.monotonic() + timeout
+    with engine.connect() as connection:
+        while time.monotonic() < deadline:
+            waiting = connection.scalar(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity "
+                    "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+                )
+            )
+            connection.rollback()  # each poll reads fresh statistics, not the first snapshot
+            if waiting:
+                return
+            time.sleep(0.005)
+    raise AssertionError(f"no backend waited for a lock within {timeout} seconds")
 
 
 def run_concurrently[T](calls: Sequence[Callable[[], T]]) -> list[T]:

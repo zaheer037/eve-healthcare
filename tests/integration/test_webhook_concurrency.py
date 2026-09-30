@@ -1,6 +1,6 @@
 """Concurrent webhook deliveries: the idempotency that the design exists for (architecture §6.2).
 
-Success criterion SC2 and checks AB11, AB23 and AB24.
+It checks AB11, AB23 and AB24.
 """
 
 import json

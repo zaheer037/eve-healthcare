@@ -264,7 +264,7 @@ def test_an_amount_that_equals_the_payment_up_to_the_scale_is_accepted(
 def test_a_failure_rolls_everything_back_and_leaves_no_event_row(
     db_session: Session, make_service: ServiceFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Spec 8.2: if processing fails, the rollback removes the event row, so the provider's retry
+    """If processing fails, the rollback removes the event row, so the provider's retry
     runs the event again. A gate that committed alone would mark it seen and never applied."""
     payment = pending(db_session)
 

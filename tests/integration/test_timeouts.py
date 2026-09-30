@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.models.booking import Booking, BookingStatus
 from app.models.payment import Payment
 from tests.factories import make_booking, make_centre
+from tests.support import wait_for_a_lock_waiter
 
 Headers = dict[str, str]
 ClientFactory = Callable[..., TestClient]
@@ -118,7 +119,7 @@ def test_a_request_that_finds_no_free_connection_is_503(
             )
         )
         holder.start()
-        time.sleep(0.4)  # the cancel now holds the only connection, waiting for the row
+        wait_for_a_lock_waiter(db_engine)  # the cancel holds the only connection, waiting
         started = time.perf_counter()
         response = client.get("/centres/")
         waited = time.perf_counter() - started

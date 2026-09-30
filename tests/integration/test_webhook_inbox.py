@@ -1,7 +1,6 @@
 """The webhook inbox: one row per event, and the gate that makes a duplicate harmless (§6.2)."""
 
 import threading
-import time
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -14,7 +13,7 @@ from app.models.payment import WebhookEvent, WebhookOutcome
 from app.payments.inbox import WebhookInbox
 from app.payments.schemas import WebhookPayload
 from tests.factories import make_payment
-from tests.support import indexes_used
+from tests.support import indexes_used, wait_for_a_lock_waiter
 
 PROVIDER = "SIMULATOR"
 
@@ -82,7 +81,7 @@ def test_the_same_event_again_is_a_duplicate_and_stores_nothing_more(
 def test_a_reused_event_id_is_a_duplicate_even_when_the_body_differs(
     session: Session, db_session: Session
 ) -> None:
-    """A ponytail of the design: no payload comparison."""
+    """A known limit of the design: no payload comparison."""
     inbox = WebhookInbox(session)
     inbox.record(PROVIDER, payload("evt_1"))
     session.commit()
@@ -170,7 +169,7 @@ def test_a_second_insert_waits_for_the_first_transaction_and_follows_its_fate(
     rival = threading.Thread(target=record_in_thread, args=(db_engine, results, started))
     rival.start()
     started.wait(timeout=5)
-    time.sleep(0.3)  # the rival is now blocked on the unique index entry of the first insert
+    wait_for_a_lock_waiter(db_engine)  # the rival waits on the unique index entry of the first
     assert results == []
     session.commit() if first_commits else session.rollback()
     rival.join(timeout=5)
