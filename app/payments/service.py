@@ -11,7 +11,12 @@ from app.bookings.repository import BookingRepository
 from app.core.clock import Clock, utcnow
 from app.core.config import Settings
 from app.core.db import retry_transient, transaction
-from app.core.errors import BookingNotFound, PaymentNotFound, SimulationNotAllowed
+from app.core.errors import (
+    BookingNotFound,
+    PaymentNotFound,
+    ServiceUnavailable,
+    SimulationNotAllowed,
+)
 from app.models.booking import Booking, BookingStatus
 from app.models.payment import Payment, PaymentStatus, WebhookOutcome
 from app.payments.inbox import WebhookInbox
@@ -169,13 +174,23 @@ class PaymentService:
         right tool.
 
         Raises:
-            ServiceUnavailable: a transient failure persisted through every attempt.
+            ServiceUnavailable: a transient failure persisted through every attempt. A
+                `webhook.unavailable` warning carries the event and payment IDs.
 
         Commits: yes.
         """
-        received = retry_transient(
-            lambda: self._receive(payload), retry_on_constraints=RETRIED_CONSTRAINTS
-        )
+        try:
+            received = retry_transient(
+                lambda: self._receive(payload), retry_on_constraints=RETRIED_CONSTRAINTS
+            )
+        except ServiceUnavailable:
+            # Nothing was stored, and the 503 names no event. This line is the only trace of it.
+            log.warning(
+                "webhook.unavailable",
+                event_id=payload.event_id,
+                payment_id=str(payload.payment_id),
+            )
+            raise
         self._log_delivery(payload, received.ack)  # after the commit, so a rolled-back attempt
         if received.settled is not None:  # never logs
             self._log_settled(received.settled, source="webhook")

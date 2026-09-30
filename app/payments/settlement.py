@@ -68,12 +68,12 @@ def settle(
     if payment.status is not PaymentStatus.PENDING:
         return Settlement.review("terminal_conflict")
 
+    succeeded = result.status is PaymentStatus.SUCCESS
     payment.status = result.status
     payment.provider_payment_id = result.provider_payment_id
-    payment.failure_reason = result.failure_reason
+    payment.failure_reason = None if succeeded else result.failure_reason  # a paid payment has none
     payment.settled_at = now
 
-    succeeded = result.status is PaymentStatus.SUCCESS
     if booking.status is BookingStatus.PENDING:
         booking.status = transition(
             booking.status, BookingStatus.CONFIRMED if succeeded else BookingStatus.FAILED

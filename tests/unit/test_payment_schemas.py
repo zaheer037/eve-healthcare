@@ -90,17 +90,6 @@ def test_a_failed_status_parses() -> None:
     assert payload.failure_reason == "card_declined"
 
 
-def test_a_success_event_carries_no_failure_reason() -> None:
-    """A payment that succeeded has nothing to explain, so a reason on it is a broken contract."""
-    assert refused_fields(status="SUCCESS", failure_reason="card_declined") == {"failure_reason"}
-    assert WebhookPayload.model_validate(event(status="SUCCESS", failure_reason=None))
-
-
-def test_a_bad_status_is_the_only_error_when_a_reason_comes_with_it() -> None:
-    """The reason is judged against a status that was valid. Otherwise one mistake shows twice."""
-    assert refused_fields(status="REFUNDED", failure_reason="card_declined") == {"status"}
-
-
 @pytest.mark.parametrize(
     "event_id",
     ["", "   ", "x" * 129, "evt\x00", "evt\n1", "evt\N{RIGHT-TO-LEFT OVERRIDE}1", None, 7],
@@ -152,8 +141,29 @@ def test_a_provider_reference_is_1_to_128_characters_without_control_characters(
     assert refused_fields(provider_payment_id=reference) == {"provider_payment_id"}
 
 
-@pytest.mark.parametrize("reason", ["", "x" * 201, "declined\x00", "a\nb"])
-def test_a_failure_reason_has_no_control_characters(reason: str) -> None:
+@pytest.mark.parametrize(
+    ("sent", "kept"),
+    [
+        ("card_declined", "card_declined"),
+        ("declined\x00now", "declined now"),
+        ("Do not honour\nContact your issuer\t.", "Do not honour Contact your issuer ."),
+        ("  padded   out  ", "padded out"),
+        ("a\N{RIGHT-TO-LEFT OVERRIDE}b", "a b"),
+        ("x" * 500, "x" * 200),
+        ("", None),
+        ("   \n\t ", None),
+    ],
+)
+def test_a_failure_reason_is_cleaned_and_never_refused(sent: str, kept: str | None) -> None:
+    """It only explains. A text that a database or a screen cannot take must not stop a
+    settlement: the provider would retry the same body for ever, and the payment would stay
+    pending."""
+    payload = WebhookPayload.model_validate(event(status="FAILED", failure_reason=sent))
+    assert payload.failure_reason == kept
+
+
+@pytest.mark.parametrize("reason", [7, [], {}, True])
+def test_a_failure_reason_that_is_not_text_is_still_refused(reason: Any) -> None:
     assert refused_fields(failure_reason=reason) == {"failure_reason"}
 
 

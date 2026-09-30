@@ -11,10 +11,12 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from structlog.testing import capture_logs
 
 from app.core.config import Settings
+from app.core.errors import ServiceUnavailable
 from app.models.booking import Booking, BookingStatus
 from app.models.payment import Payment, PaymentStatus, WebhookEvent, WebhookOutcome
 from app.payments.schemas import WebhookAck, WebhookPayload
@@ -294,6 +296,31 @@ def test_the_transaction_has_ended_and_the_locks_are_free_afterwards(
 
 
 # ==== what an operator sees in the log
+
+
+class SerializationFailure(Exception):
+    """What psycopg puts in `orig`: PostgreSQL chose this transaction as the victim."""
+
+    sqlstate = "40001"
+
+
+def test_a_delivery_that_runs_out_of_retries_is_logged_with_its_ids_and_stores_nothing(
+    db_session: Session, make_service: ServiceFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 503 carries no event ID, so this line is the operator's only trace of the event."""
+    payment = pending(db_session)
+
+    def victim(*_args: Any, **_kwargs: Any) -> None:
+        raise OperationalError("UPDATE payments", {}, SerializationFailure())
+
+    monkeypatch.setattr("app.payments.service.settle", victim)
+    incoming = event(payment.id)
+    with capture_logs() as logs, pytest.raises(ServiceUnavailable):
+        make_service().handle_webhook(incoming)
+    (line,) = [line for line in logs if line["event"] == "webhook.unavailable"]
+    assert line["log_level"] == "warning"
+    assert (line["event_id"], line["payment_id"]) == (incoming.event_id, str(payment.id))
+    assert events(db_session) == []
 
 
 def test_a_result_that_needs_review_is_logged_at_error_and_a_rejection_too(

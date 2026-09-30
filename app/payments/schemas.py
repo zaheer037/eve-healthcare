@@ -1,19 +1,41 @@
 """Request and response models of the payment endpoints and the webhook (architecture §5.6)."""
 
+import unicodedata
 import uuid
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from app.bookings.schemas import PaymentSummary
-from app.core.schemas import CurrencyCode, Money, SafeText
+from app.core.schemas import BIDI_CONTROLS, CurrencyCode, Money, SafeText
 from app.models.booking import BookingStatus
 from app.models.payment import PaymentStatus, WebhookOutcome
 from app.payments.settlement import TerminalStatus
 
 EventId = Annotated[SafeText, Field(max_length=128)]
 ProviderReference = Annotated[SafeText, Field(max_length=128)]
-FailureReason = Annotated[SafeText, Field(max_length=200)]
+MAX_FAILURE_REASON = 200
+
+
+def clean_reason(value: object) -> object:
+    """Make the reason fit for the database and the screen. Never refuse it.
+
+    It only explains. A refused event would come again, the provider would retry the same body,
+    and the payment would stay pending while a cancel answers 409. So control characters, bidi
+    overrides and lone surrogates become spaces, white space collapses, the text is cut at 200
+    characters, and a text with nothing left becomes `None`. Something that is not text is still
+    a 422.
+    """
+    if not isinstance(value, str):
+        return value
+    spaced = "".join(
+        " " if unicodedata.category(char) in ("Cc", "Cs") or char in BIDI_CONTROLS else char
+        for char in value
+    )
+    return " ".join(spaced.split())[:MAX_FAILURE_REASON].strip() or None
+
+
+FailureReason = Annotated[str | None, BeforeValidator(clean_reason)]
 
 
 class PaymentCreate(BaseModel):
@@ -64,16 +86,7 @@ class WebhookPayload(BaseModel):
     provider_payment_id: ProviderReference | None = None
     amount: Money | None = None
     currency: CurrencyCode | None = None
-    failure_reason: FailureReason | None = None
-
-    @field_validator("failure_reason")
-    @classmethod
-    def only_a_failure_has_a_reason(cls, reason: str | None, info: ValidationInfo) -> str | None:
-        """A payment that succeeded has nothing to explain. `status` comes first in the model, so
-        it is in `info.data` unless it was invalid, and then its own error is the only one."""
-        if reason is not None and info.data.get("status") is PaymentStatus.SUCCESS:
-            raise ValueError("a reason is only allowed when the status is FAILED")
-        return reason
+    failure_reason: FailureReason = None
 
 
 class WebhookAck(BaseModel):

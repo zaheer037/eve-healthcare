@@ -98,6 +98,28 @@ def test_a_failed_event_fails_the_payment_and_the_booking(
     assert statuses(db_session, payment) == (PaymentStatus.FAILED, BookingStatus.FAILED)
 
 
+def test_a_failure_reason_with_control_characters_is_cleaned_and_the_event_still_settles(
+    client: TestClient, secret: str, db_session: Session
+) -> None:
+    payment = pending_payment(db_session)
+    reason = "Do not honour\nContact your issuer\u0000"
+    body = raw(payment_id=str(payment.id), status="FAILED", failure_reason=reason)
+    response = deliver(client, secret, body)
+    assert (response.status_code, response.json()["outcome"]) == (200, "APPLIED")
+    db_session.refresh(payment)
+    assert payment.failure_reason == "Do not honour Contact your issuer"
+
+
+def test_a_success_event_that_carries_a_reason_settles_and_stores_none(
+    client: TestClient, secret: str, db_session: Session
+) -> None:
+    payment = pending_payment(db_session)
+    response = deliver(client, secret, raw(payment_id=str(payment.id), failure_reason="declined"))
+    assert response.json()["outcome"] == "APPLIED"
+    db_session.refresh(payment)
+    assert (payment.status, payment.failure_reason) == (PaymentStatus.SUCCESS, None)
+
+
 def test_a_repeat_of_an_event_answers_duplicate(
     client: TestClient, secret: str, db_session: Session
 ) -> None:
@@ -238,8 +260,6 @@ def test_a_chunked_body_over_the_cap_is_413_too(
         ({"event_id": None}, "body.event_id"),
         ({"event_id": "a\u0000b"}, "body.event_id"),
         ({"provider_payment_id": "sim\u0000"}, "body.provider_payment_id"),
-        ({"failure_reason": "declined\u0000"}, "body.failure_reason"),
-        ({"failure_reason": "declined"}, "body.failure_reason"),  # on a SUCCESS event
         ({"amount": "-1"}, "body.amount"),
         ({"currency": "inr"}, "body.currency"),
         ({"payment_id": "nope"}, "body.payment_id"),
@@ -348,10 +368,13 @@ def test_a_lock_timeout_is_503_asks_for_a_retry_stores_nothing_and_is_not_retrie
 
 
 def test_the_openapi_document_lists_the_signature_header_and_the_body(client: TestClient) -> None:
-    operation = client.get("/openapi.json").json()["paths"]["/payments/webhook/"]["post"]
+    document = client.get("/openapi.json").json()
+    operation = document["paths"]["/payments/webhook/"]["post"]
     header = next(p for p in operation["parameters"] if p["name"] == "X-Webhook-Signature")
     assert header["in"] == "header"
     assert header["required"] is True
-    schema = operation["requestBody"]["content"]["application/json"]["schema"]
+    body = operation["requestBody"]["content"]["application/json"]
+    assert body["schema"] == {"$ref": "#/components/schemas/WebhookPayload"}
+    schema = document["components"]["schemas"]["WebhookPayload"]
     assert {"event_id", "payment_id", "status"} <= set(schema["required"])
-    assert operation["requestBody"]["content"]["application/json"]["example"]["status"] == "SUCCESS"
+    assert body["example"]["status"] == "SUCCESS"

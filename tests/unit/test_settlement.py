@@ -70,6 +70,12 @@ def test_a_pending_payment_that_fails_fails_the_booking_and_keeps_the_reason() -
     assert booking.status is B_FAILED
 
 
+def test_a_success_keeps_no_failure_reason_even_when_the_event_carries_one() -> None:
+    booking, payment = entities(PENDING, B_PENDING)
+    settle(booking, payment, result(SUCCESS, "ref_1", "left over"), now=NOW)
+    assert payment.failure_reason is None
+
+
 @pytest.mark.parametrize("booking_status", [CONFIRMED, B_FAILED, CANCELLED])
 def test_a_failure_for_a_booking_that_is_not_pending_settles_the_payment_only(
     booking_status: BookingStatus,

@@ -255,7 +255,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--currency", default=None, help="add a currency, for example INR")
     parser.add_argument(
-        "--failure-reason", default=None, help="add a reason (the API refuses one on SUCCESS)"
+        "--failure-reason", default=None, help="add a reason (a paid payment keeps none)"
     )
     parser.add_argument("--repeat", type=_at_least_one, default=1, help="send the event N times")
     parser.add_argument("--concurrent", action="store_true", help="send the copies at once")
