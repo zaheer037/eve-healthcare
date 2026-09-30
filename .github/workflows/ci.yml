@@ -82,6 +82,14 @@ jobs:
         run: docker compose up --build --wait
       - name: Readiness probe
         run: curl --fail --silent --show-error http://localhost:8000/health/ready
+      - name: The seeded admin can log in and the sample catalog is there
+        run: |
+          curl --fail --silent --show-error -X POST http://localhost:8000/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"admin@example.com","password":"dev-only-admin-password"}' \
+            | grep --quiet access_token
+          curl --fail --silent --show-error http://localhost:8000/centres/ \
+            | python3 -c 'import json, sys; assert json.load(sys.stdin)["pagination"]["total"] == 5'
       - name: Run the tests in Docker
         run: docker compose --profile test run --rm test
       - name: Stop the stack and remove its volume

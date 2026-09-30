@@ -19,8 +19,13 @@ test: ## Run the tests on the host (needs `make db`)
 test-unit: ## Run the unit tests only (no database needed)
 	uv run pytest -q tests/unit
 
-coverage: ## Tests with the coverage gate that CI uses (85% overall)
+# The modules that hold the rules: services, the state machine, the policies, settlement, the
+# webhook signature and the password and token code. They need a higher bar than the rest.
+LOGIC_MODULES := app/*/service.py,app/bookings/state.py,app/bookings/policy.py,app/payments/settlement.py,app/payments/signature.py,app/core/security.py
+
+coverage: ## Tests with the coverage gates that CI uses (85% overall, 90% for the logic modules)
 	uv run pytest -q --cov=app --cov-report=term-missing --cov-fail-under=85
+	uv run coverage report --include="$(LOGIC_MODULES)" --fail-under=90
 
 test-docker: ## Run the tests in Docker only
 	$(COMPOSE) --profile test run --rm test
