@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.models.booking import Booking, BookingStatus
 from app.models.payment import Payment, PaymentStatus
-from tests.factories import make_booking, make_payment, make_user
+from tests.factories import future_slot, make_booking, make_payment, make_user
 from tests.support import AUTH_LOOKUP, QueryCounter, run_concurrently
 
 Headers = dict[str, str]
@@ -276,6 +276,27 @@ def test_without_an_override_the_success_rate_setting_decides(
     response = pay(client, patient_headers, booking)
     assert response.status_code == 201
     assert response.json()["status"] == expected
+
+
+def test_without_simulate_a_payment_always_ends_in_success_or_failed(
+    client: TestClient, patient: Any, patient_headers: Headers, db_session: Session
+) -> None:
+    """Success criterion SC1. With the default success rate, the dice decide, and the answer is
+    always a settled payment: 201, SUCCESS or FAILED, and never a pending 202."""
+    bookings = [
+        make_booking(db_session, user=patient, appointment_at=future_slot(2 + day))
+        for day in range(15)
+    ]
+    responses = [pay(client, patient_headers, booking) for booking in bookings]
+    assert {response.status_code for response in responses} == {201}
+    assert {response.json()["status"] for response in responses} <= {"SUCCESS", "FAILED"}
+    for booking, response in zip(bookings, responses, strict=True):
+        expected = (
+            BookingStatus.CONFIRMED
+            if response.json()["status"] == "SUCCESS"
+            else BookingStatus.FAILED
+        )
+        assert booking_status(db_session, booking) is expected  # the booking follows the payment
 
 
 # ==== read one payment

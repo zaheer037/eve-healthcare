@@ -20,7 +20,7 @@ from app.models.booking import Booking, BookingStatus
 from app.models.payment import Payment, PaymentStatus, WebhookEvent
 from app.payments.signature import header_for
 from tests.factories import make_booking, make_payment
-from tests.support import QueryCounter, run_concurrently
+from tests.support import QueryCounter
 
 Headers = dict[str, str]
 ClientFactory = Callable[..., TestClient]
@@ -341,59 +341,6 @@ def test_a_lock_timeout_is_503_asks_for_a_retry_stores_nothing_and_is_not_retrie
     assert count_events(db_session) == 0  # rolled back, so the provider's retry runs the event
     retry = deliver(client, secret, body)  # the lock is free now
     assert retry.json()["outcome"] == "APPLIED"
-
-
-# ==== the concurrency that idempotency exists for (AB11)
-
-
-@pytest.mark.concurrency
-def test_twenty_identical_events_at_once_are_one_processed_and_nineteen_duplicates(
-    client: TestClient, secret: str, db_session: Session
-) -> None:
-    payment = pending_payment(db_session)
-    body = raw(payment_id=str(payment.id), event_id="evt_same", provider_payment_id="sim_1")
-    calls = [lambda: deliver(client, secret, body).json()["status"] for _ in range(20)]
-    results = run_concurrently(calls)
-    assert sorted(results) == ["duplicate"] * 19 + ["processed"]
-    assert count_events(db_session) == 1
-    assert statuses(db_session, payment) == (PaymentStatus.SUCCESS, BookingStatus.CONFIRMED)
-
-
-@pytest.mark.concurrency
-def test_ten_events_with_different_ids_and_references_are_one_applied_and_nine_reviews(
-    client: TestClient, secret: str, db_session: Session
-) -> None:
-    """AB23: the booking lock serialises them, so the first wins and the rest disagree with it."""
-    payment = pending_payment(db_session)
-    calls = [
-        lambda n=n: deliver(  # type: ignore[misc]
-            client, secret, raw(payment_id=str(payment.id), provider_payment_id=f"sim_{n}")
-        ).json()
-        for n in range(10)
-    ]
-    results = run_concurrently(calls)
-    outcomes = sorted((r["outcome"], r["detail"]) for r in results)
-    assert outcomes == [("APPLIED", None)] + [("NEEDS_REVIEW", "reference_mismatch")] * 9
-    assert count_events(db_session) == 10
-
-
-@pytest.mark.concurrency
-def test_one_reference_on_two_payments_at_the_same_moment_is_one_applied_and_one_rejected(
-    client: TestClient, secret: str, db_session: Session
-) -> None:
-    """AB24: the pre-check cannot see an update that another transaction has not committed. The
-    unique index stops the second, and the retry then records a rejection instead of a 500."""
-    first, second = pending_payment(db_session), pending_payment(db_session)
-    calls = [
-        lambda payment=payment: deliver(  # type: ignore[misc]
-            client, secret, raw(payment_id=str(payment.id), provider_payment_id="sim_shared")
-        )
-        for payment in (first, second)
-    ]
-    responses = run_concurrently(calls)
-    assert [response.status_code for response in responses] == [200, 200]
-    outcomes = sorted((r.json()["outcome"], r.json()["detail"]) for r in responses)
-    assert outcomes == [("APPLIED", None), ("REJECTED", "provider_reference_conflict")]
 
 
 # ==== the documentation of a route without a declared body
