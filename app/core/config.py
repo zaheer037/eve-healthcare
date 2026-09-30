@@ -27,14 +27,19 @@ def _is_production(data: dict[str, Any]) -> bool:
     return data.get("environment") == Environment.PRODUCTION
 
 
-class Settings(BaseSettings):
+class DatabaseSettings(BaseSettings):
+    """The one value a migration needs, so `alembic` does not demand the application secrets."""
+
     # extra="ignore": compose shares one environment with the database container.
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    database_url: SecretStr
+
+
+class Settings(DatabaseSettings):
     environment: Environment  # required on purpose: no default
 
     # Database
-    database_url: SecretStr
     db_pool_size: int = Field(default=10, ge=1)
     db_max_overflow: int = Field(default=10, ge=0)
     db_pool_timeout: int = Field(default=10, ge=1)
