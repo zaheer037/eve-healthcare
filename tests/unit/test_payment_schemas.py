@@ -90,6 +90,17 @@ def test_a_failed_status_parses() -> None:
     assert payload.failure_reason == "card_declined"
 
 
+def test_a_success_event_carries_no_failure_reason() -> None:
+    """A payment that succeeded has nothing to explain, so a reason on it is a broken contract."""
+    assert refused_fields(status="SUCCESS", failure_reason="card_declined") == {"failure_reason"}
+    assert WebhookPayload.model_validate(event(status="SUCCESS", failure_reason=None))
+
+
+def test_a_bad_status_is_the_only_error_when_a_reason_comes_with_it() -> None:
+    """The reason is judged against a status that was valid. Otherwise one mistake shows twice."""
+    assert refused_fields(status="REFUNDED", failure_reason="card_declined") == {"status"}
+
+
 @pytest.mark.parametrize(
     "event_id",
     ["", "   ", "x" * 129, "evt\x00", "evt\n1", "evt\N{RIGHT-TO-LEFT OVERRIDE}1", None, 7],

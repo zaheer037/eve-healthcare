@@ -239,6 +239,7 @@ def test_a_chunked_body_over_the_cap_is_413_too(
         ({"event_id": "a\u0000b"}, "body.event_id"),
         ({"provider_payment_id": "sim\u0000"}, "body.provider_payment_id"),
         ({"failure_reason": "declined\u0000"}, "body.failure_reason"),
+        ({"failure_reason": "declined"}, "body.failure_reason"),  # on a SUCCESS event
         ({"amount": "-1"}, "body.amount"),
         ({"currency": "inr"}, "body.currency"),
         ({"payment_id": "nope"}, "body.payment_id"),

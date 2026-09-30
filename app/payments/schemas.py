@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from app.bookings.schemas import PaymentSummary
 from app.core.schemas import CurrencyCode, Money, SafeText
@@ -65,6 +65,15 @@ class WebhookPayload(BaseModel):
     amount: Money | None = None
     currency: CurrencyCode | None = None
     failure_reason: FailureReason | None = None
+
+    @field_validator("failure_reason")
+    @classmethod
+    def only_a_failure_has_a_reason(cls, reason: str | None, info: ValidationInfo) -> str | None:
+        """A payment that succeeded has nothing to explain. `status` comes first in the model, so
+        it is in `info.data` unless it was invalid, and then its own error is the only one."""
+        if reason is not None and info.data.get("status") is PaymentStatus.SUCCESS:
+            raise ValueError("a reason is only allowed when the status is FAILED")
+        return reason
 
 
 class WebhookAck(BaseModel):

@@ -895,7 +895,7 @@ Contracts only. Every schema is a Pydantic v2 model in the feature's `schemas.py
 | `PaymentSummary` | `id`, `amount`, `currency`, `status`, `failure_reason`, `settled_at` | |
 | `PaymentCreate` | `booking_id`, `simulate?` | `simulate` is `SUCCESS`, `FAILED` or `PENDING`. |
 | `PaymentRead` | `id`, `booking_id`, `amount`, `currency`, `status`, `failure_reason`, `settled_at`, `booking: {id, status}` | |
-| `WebhookPayload` | `event_id`, `payment_id`, `status`, `amount?`, `currency?`, `provider_payment_id?`, `failure_reason?` | `extra="ignore"`. `status` is `SUCCESS` or `FAILED`. `event_id` and `provider_payment_id` have 1–128 characters. Every text field rejects control characters such as `NUL`. `currency` matches `^[A-Z]{3}$`. |
+| `WebhookPayload` | `event_id`, `payment_id`, `status`, `amount?`, `currency?`, `provider_payment_id?`, `failure_reason?` | `extra="ignore"`. `status` is `SUCCESS` or `FAILED`. `event_id` and `provider_payment_id` have 1–128 characters. Every text field rejects control characters such as `NUL`. `currency` matches `^[A-Z]{3}$`. `failure_reason` is allowed only when `status` is `FAILED`. |
 | `WebhookAck` | `status` (`processed` or `duplicate`), `outcome?`, `detail?` | |
 | `ProblemDetail` | `type`, `title`, `status`, `detail?`, `instance`, `code` (an `ErrorCode`), `request_id`, `errors?` | The model behind every `responses=` entry. |
 | `PatchModel` | base of every update model | `extra="forbid"`. A `before` validator rejects `null` for fields outside `nullable`. An `after` validator rejects an empty body. |
@@ -1069,7 +1069,7 @@ The signature above is real. It uses the secret `whsec_demo_only_not_a_real_secr
 | Required by default | `WEBHOOK_SIGNATURE_REQUIRED` is `true`. Setting it to `false` skips the check for Swagger experiments. Production refuses to start with `false` (ADR-06). |
 | Secret | `WEBHOOK_SECRET`, at least 32 bytes, from the environment. |
 | Required fields | `event_id` (1–128 characters, the idempotency key, unique per provider), `payment_id` (UUID), `status` (`SUCCESS` or `FAILED`). |
-| Optional fields | `amount` (decimal string), `currency`, `provider_payment_id` (1–128 characters), `failure_reason`. When `amount` or `currency` is present, the receiver compares it with its own payment row. Every text field rejects `NUL` and other control characters. |
+| Optional fields | `amount` (decimal string), `currency`, `provider_payment_id` (1–128 characters), `failure_reason` (only with `FAILED`, because a payment that succeeded has nothing to explain). When `amount` or `currency` is present, the receiver compares it with its own payment row. Every text field rejects `NUL` and other control characters. |
 | Unknown fields | Ignored. A provider can add fields without breaking us. |
 | Stored payload | The `payload` column stores the validated fields (`model_dump(mode="json")`), not the raw body. Unknown fields are dropped and text fields reject `NUL`, so the `jsonb` insert cannot fail on `\u0000`. |
 | Trust | The payload names only `payment_id`. The receiver derives the booking from its own records. It ignores any booking ID in the payload. |
@@ -1261,7 +1261,7 @@ Each abuse case is an automated test. The list grows as new cases appear.
 | AB29 | The 21st active booking for one user | `409 BOOKING_LIMIT_REACHED` |
 | AB30 | `simulate` in a request while `ENVIRONMENT=production` | `422 SIMULATION_NOT_ALLOWED` |
 | AB31 | Pay a booking whose appointment has started | `409 BOOKING_NOT_PAYABLE` |
-| AB32 | A signed webhook body with a bad field (`status` `REFUNDED`, a missing `event_id`, or `NUL` in any text field) | `422`, no event row, the log names the field |
+| AB32 | A signed webhook body with a bad field (`status` `REFUNDED`, a missing `event_id`, `NUL` in any text field, or a `failure_reason` on a `SUCCESS` event) | `422`, no event row, the log names the field |
 | AB33 | `PATCH` with `{"name": null}` or `{}` | `422`, and no `500` |
 | AB34 | `HEAD` on a `GET` route | `200` with no body |
 | AB35 | A client sends `X-Forwarded-For: 6.6.6.6, <real address>` through the proxy | The throttle keys on the address that the proxy appended |

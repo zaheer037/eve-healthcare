@@ -30,8 +30,9 @@ class WebhookOutcome(StrEnum):
     REJECTED = "REJECTED"
 
 
-# A booking has at most one payment in these statuses. A FAILED payment is over, so a new one may
-# follow it. The unique index below and the replay rule of `POST /payments/` both rest on this.
+# A booking has at most one payment in these statuses. A FAILED payment is over, so the unique
+# index below does not block a new one. No path adds one today: a failed payment makes its booking
+# FAILED, which is final (ADR-09). The index and the replay rule of `POST /payments/` rest on this.
 LIVE_PAYMENT_STATUSES = (PaymentStatus.PENDING, PaymentStatus.SUCCESS)
 _LIVE_SQL = ", ".join(f"'{status.value}'" for status in LIVE_PAYMENT_STATUSES)
 
