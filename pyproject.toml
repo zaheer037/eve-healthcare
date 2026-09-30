@@ -64,6 +64,8 @@ select = [
   "T20",     # print
   "TID",     # tidy imports (the layer bans below)
 ]
+# Domain errors are named after the catalogue (BookingNotFound), not with an "Error" suffix.
+ignore = ["N818"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "fastapi".msg = "fastapi belongs in routers, dependencies, schemas, core and main only (spec section 4.2)."
