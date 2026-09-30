@@ -1,4 +1,4 @@
-# Keep the build context small: the project folder also holds the working spec, drafts and
+# Keep the build context small: the project folder also holds local notes, drafts and
 # virtual environments. The image needs only pyproject.toml, uv.lock, app, scripts, migrations,
 # alembic.ini and tests.
 .git

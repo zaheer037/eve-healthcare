@@ -12,7 +12,7 @@ htmlcov/
 build/
 dist/
 
-# Author-only working files (the working spec and its drafts, never published)
+# Local notes and drafts. They are not part of the project.
 docs/ARCHITECTURE.working.md
 docs/spikes/
 docs/.draft*/
