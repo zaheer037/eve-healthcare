@@ -12,17 +12,6 @@ from app.core.config import Settings
 from app.core.db import connection_options, create_db_engine, get_session
 
 
-@pytest.fixture
-def settings() -> Settings:
-    return Settings(
-        _env_file=None,
-        environment="test",
-        database_url="postgresql+psycopg://eve:secret@db:5432/eve",
-        jwt_secret="j" * 40,
-        webhook_secret="w" * 40,
-    )
-
-
 def test_every_connection_starts_with_the_timeouts_and_utc(settings: Settings) -> None:
     assert connection_options(settings) == (
         "-c timezone=UTC -c statement_timeout=5000 -c lock_timeout=2000"

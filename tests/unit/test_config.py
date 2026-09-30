@@ -1,39 +1,16 @@
 """Settings: defaults per environment, and every start-up refusal (AB26, design check K)."""
 
-from collections.abc import Callable
-from typing import Any
-
 import pytest
 from pydantic import ValidationError
 
 from app.core.config import Environment, Settings
+from tests.support import SettingsFactory
 
 STRONG_JWT = "j" * 40
 STRONG_WEBHOOK = "w" * 40
 DEV_JWT = "dev-only-jwt-secret-change-me-0123456789abcdef"
 DEV_WEBHOOK = "dev-only-webhook-secret-change-me-0123456789"
 SPEC_EXAMPLE_WEBHOOK = "whsec_demo_only_not_a_real_secret_0123456789"
-
-SettingsFactory = Callable[..., Settings]
-
-
-@pytest.fixture
-def make_settings(monkeypatch: pytest.MonkeyPatch) -> SettingsFactory:
-    """Build Settings from keyword arguments only: no `.env` file and no ambient variables."""
-    for name in Settings.model_fields:
-        monkeypatch.delenv(name.upper(), raising=False)
-
-    def factory(**overrides: Any) -> Settings:
-        values: dict[str, Any] = {
-            "environment": "development",
-            "database_url": "postgresql+psycopg://u:p@localhost:5432/db",
-            "jwt_secret": STRONG_JWT,
-            "webhook_secret": STRONG_WEBHOOK,
-        }
-        values.update(overrides)
-        return Settings(_env_file=None, **values)
-
-    return factory
 
 
 def test_defaults_in_development(make_settings: SettingsFactory) -> None:
