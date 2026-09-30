@@ -1,6 +1,7 @@
 """Input types shared by every schema (spec section 7.1)."""
 
 import unicodedata
+from decimal import Decimal
 from functools import partial
 from typing import Annotated, Any, ClassVar, Self
 
@@ -8,6 +9,7 @@ from pydantic import (
     AfterValidator,
     BaseModel,
     ConfigDict,
+    Field,
     StringConstraints,
     ValidationInfo,
     field_validator,
@@ -46,6 +48,15 @@ SafeParagraph = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1),
     AfterValidator(partial(reject_control_characters, allow="\t\n")),
 ]
+
+# The bounds are those of the money CHECKs and of numeric(10,2), so the database never rounds and a
+# client cannot reach a CHECK. NaN and infinity are refused by default.
+Money = Annotated[
+    Decimal,
+    Field(ge=Decimal("0.01"), le=Decimal("99999999.99"), max_digits=10, decimal_places=2),
+]
+# The same rule as the `ck_*_currency` CHECKs, so a lower-case code is a 422 and not a 500.
+CurrencyCode = Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 
 
 class PatchModel(BaseModel):

@@ -1,0 +1,67 @@
+"""Request and response models of the payment endpoints and the webhook (spec section 7.6)."""
+
+import uuid
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.bookings.schemas import PaymentSummary
+from app.core.schemas import CurrencyCode, Money, SafeText
+from app.models.booking import BookingStatus
+from app.models.payment import PaymentStatus, WebhookOutcome
+from app.payments.settlement import TerminalStatus
+
+EventId = Annotated[SafeText, Field(max_length=128)]
+ProviderReference = Annotated[SafeText, Field(max_length=128)]
+FailureReason = Annotated[SafeText, Field(max_length=200)]
+
+
+class PaymentCreate(BaseModel):
+    """Pay a booking. The amount always comes from the booking, so a client never sends one."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    booking_id: uuid.UUID
+    simulate: PaymentStatus | None = Field(
+        default=None,
+        description="Force the result: SUCCESS, FAILED, or PENDING (the webhook settles it later)."
+        " Refused when the setting `PAYMENT_ALLOW_SIMULATE_OVERRIDE` is off.",
+    )
+
+
+class BookingRef(BaseModel):
+    id: uuid.UUID
+    status: BookingStatus
+
+
+class PaymentRead(PaymentSummary):
+    """A payment with its booking's id and current status."""
+
+    booking_id: uuid.UUID
+    booking: BookingRef
+
+
+class WebhookPayload(BaseModel):
+    """One event from the provider (spec section 8.5).
+
+    A provider can add fields, so unknown ones are ignored. Only `payment_id` names anything: the
+    receiver derives the booking from its own records and never trusts one in the payload.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    event_id: EventId
+    payment_id: uuid.UUID
+    status: TerminalStatus
+    provider_payment_id: ProviderReference | None = None
+    amount: Money | None = None
+    currency: CurrencyCode | None = None
+    failure_reason: FailureReason | None = None
+
+
+class WebhookAck(BaseModel):
+    """The answer to a delivery that was stored or recognised. A business failure is an outcome."""
+
+    status: Literal["processed", "duplicate"]
+    outcome: WebhookOutcome | None = None
+    detail: str | None = None

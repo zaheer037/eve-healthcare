@@ -6,7 +6,7 @@ from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from app.core.schemas import PatchModel, SafeParagraph, SafeText
+from app.core.schemas import CurrencyCode, Money, PatchModel, SafeParagraph, SafeText
 
 CentreName = Annotated[SafeText, Field(max_length=120)]
 CentreLocation = Annotated[SafeText, Field(max_length=200)]
@@ -14,14 +14,6 @@ CentreCity = Annotated[SafeText, Field(max_length=80)]
 TestCode = Annotated[str, StringConstraints(pattern=r"^[A-Z0-9_]{2,20}$")]
 TestName = Annotated[SafeText, Field(max_length=120)]
 TestDescription = Annotated[SafeParagraph, Field(max_length=1000)]
-# The bounds are those of ck_centre_tests_price and numeric(10,2), so the database never rounds
-# and a client cannot reach the CHECK. NaN and infinity are refused by default.
-Price = Annotated[
-    Decimal,
-    Field(ge=Decimal("0.01"), le=Decimal("99999999.99"), max_digits=10, decimal_places=2),
-]
-# The same rule as ck_centre_tests_currency, so a lower-case code is a 422 and not a 500.
-Currency = Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 
 
 # ---------------------------------------------------------------- centres
@@ -80,8 +72,8 @@ class CentreTestWrite(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    price: Price
-    currency: Currency = "INR"
+    price: Money
+    currency: CurrencyCode = "INR"
     is_available: bool = True
 
 
