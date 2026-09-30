@@ -5,15 +5,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.db import violated_constraint
 from app.models.user import Role, User
 from tests.factories import make_user
-
-
-def violated_constraint(error: IntegrityError) -> str | None:
-    diag = getattr(error.orig, "diag", None)
-    name: str | None = getattr(diag, "constraint_name", None)
-    return name
-
 
 # ---------------------------------------------------------------- users
 

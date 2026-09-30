@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 from sqlalchemy import Engine, create_engine
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
@@ -44,6 +45,12 @@ def create_db_engine(settings: Settings) -> Engine:
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:
     # expire_on_commit=False: a read after a commit runs no hidden query.
     return sessionmaker(engine, expire_on_commit=False)
+
+
+def violated_constraint(error: DBAPIError) -> str | None:
+    """The name of the constraint that a database error names. psycopg puts it in `diag`."""
+    name: str | None = getattr(getattr(error.orig, "diag", None), "constraint_name", None)
+    return name
 
 
 def get_session(request: Request) -> Iterator[Session]:
