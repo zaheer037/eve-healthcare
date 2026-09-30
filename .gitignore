@@ -1,0 +1,19 @@
+# Environment and caches
+.env
+.venv*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Author-only working files (ARCHITECTURE.md until the public version replaces it)
+docs/ARCHITECTURE.md
+docs/spikes/
+docs/.draft*/
+EVE_SDE_Intern_Hiring_Assignment_*.pdf

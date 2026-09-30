@@ -1,0 +1,105 @@
+[project]
+name = "eve-healthcare-api"
+version = "0.1.0"          # uv and setuptools reject a project without a version
+description = "Diagnostic-test bookings, simulated payments and an idempotent payment webhook."
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi[standard-no-fastapi-cloud-cli]>=0.141,<0.142",
+  "starlette>=1.6",
+  "python-multipart>=0.0.31",
+  "anyio>=4.14.2",
+  "pydantic>=2.13.2",
+  "pydantic-settings>=2.15",
+  "sqlalchemy>=2.0.54,<2.1",
+  "psycopg[binary]>=3.3.6",
+  "alembic>=1.20",
+  "pyjwt>=2.15.1",
+  "pwdlib[argon2]>=0.3.1",
+  "structlog>=26.1",
+  "limits>=5.8",
+]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]         # without this, `pip install .` fails: "Multiple top-level packages"
+
+[dependency-groups]
+dev = [
+  "pytest>=9.1",
+  "pytest-cov>=7.1",
+  "httpx2>=2.13",          # TestClient needs it, because Starlette 1.7 deprecates httpx
+  "ruff>=0.16",
+  "mypy>=2.3",
+  "pre-commit>=4.6",
+  "pip-audit>=2.10",
+]
+
+[tool.fastapi]
+entrypoint = "app.main:app"
+
+# ---------------------------------------------------------------- Ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["docs"]  # author-only working files: never lint them
+
+[tool.ruff.lint]
+select = [
+  "E", "W",  # pycodestyle
+  "F",       # pyflakes
+  "I",       # isort
+  "B",       # bugbear
+  "UP",      # pyupgrade
+  "N",       # pep8-naming
+  "S",       # bandit
+  "C4",      # comprehensions
+  "DTZ",     # naive datetimes
+  "PT",      # pytest style
+  "RET",     # returns
+  "RUF",
+  "SIM",
+  "T20",     # print
+  "TID",     # tidy imports (the layer bans below)
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"fastapi".msg = "fastapi belongs in routers, dependencies, schemas, core and main only (spec section 4.2)."
+"starlette".msg = "starlette belongs in core and main only (spec section 4.2)."
+
+[tool.ruff.lint.per-file-ignores]
+# Where the HTTP framework is allowed.
+"app/main.py" = ["TID251"]
+"app/core/**" = ["TID251"]
+"app/*/router.py" = ["TID251"]
+"app/*/dependencies.py" = ["TID251"]
+"app/*/schemas.py" = ["TID251"]
+"tests/**" = ["TID251", "S101", "S105", "S106", "S311"]
+"scripts/**" = ["T201"]
+"migrations/**" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "scripts"]
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+strict = true
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+filterwarnings = ["error"]   # httpx2 in the dev group removes the TestClient deprecation warning
+pythonpath = ["."]           # a bare `pytest` then finds the `app` package
+testpaths = ["tests"]
+markers = [
+  "concurrency: threads against a real PostgreSQL. CI runs these 20 times in a row.",
+]
