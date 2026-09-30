@@ -33,7 +33,7 @@ The PDF leaves these points open. The service makes one choice for each, and eac
 | A19 | **Password policy.** 15 to 128 characters and no composition rules. This is the NIST SP 800-63B-4 baseline for a password that is the only factor. Passwords are never stripped and are NFC-normalised. The minimum is a setting, so it can be lowered for a friendlier demo (ADR-13). |
 | A20 | **Webhooks settle, never create.** A webhook only settles a payment that already exists. It never creates a payment or a booking. This is why a duplicate cannot create a second payment. |
 | A21 | **Payment window.** A booking whose appointment has started cannot be paid. |
-| A22 | **Text input.** Text fields reject control characters (Unicode category `Cc`, so also TAB, LF and DEL) and bidirectional override characters. A description also allows TAB and LF. Numeric fields match the database `CHECK` bounds. A `PATCH` with `null` is rejected for every field that is not nullable. The schemas aim to keep client input from reaching the database as an unmapped error. |
+| A22 | **Text input.** Text fields reject control characters (Unicode category `Cc`, so also TAB, LF and DEL), bidirectional override characters and lone surrogates (category `Cs`, which have no UTF-8 form). A description also allows TAB and LF. Numeric fields match the database `CHECK` bounds. A `PATCH` with `null` is rejected for every field that is not nullable. The schemas aim to keep client input from reaching the database as an unmapped error. |
 
 
 ## 2. Architecture
@@ -1254,7 +1254,7 @@ Each abuse case is an automated test. The list grows as new cases appear.
 | AB22 | More than the per-IP limit of auth requests in one minute from one IP | `429` |
 | AB23 | Ten events with different IDs and different provider references, at once | One `APPLIED`, nine `NEEDS_REVIEW` (`reference_mismatch`), no `500` |
 | AB24 | One provider reference on a second payment, also when both events arrive at the same moment | `200`, outcome `REJECTED` (`provider_reference_conflict`), no `500` |
-| AB25 | A password or a name with a control character or a bidirectional override, a 200-character password, or a 10,000-character email | `422`. The throttle key is a fixed-size hash for every email that reaches the gate. |
+| AB25 | A password or a name with a control character, a bidirectional override or a lone surrogate (`\ud800` in the JSON), a 200-character password, or a 10,000-character email | `422`. The throttle key is a fixed-size hash for every email that reaches the gate. |
 | AB26 | Start-up in production with `WEBHOOK_SIGNATURE_REQUIRED=false`, a short secret, `FORWARDED_ALLOW_IPS=*` or a missing `ENVIRONMENT` | The application refuses to start |
 | AB27 | User B cancels user A's booking while user A holds its row lock | `403` at once, no wait |
 | AB28 | A database constraint error and an unhandled exception in a request, run against a real `fastapi run` process | The log, standard output and standard error hold the constraint name, and no email, hash, query string or other row value |

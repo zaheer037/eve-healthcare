@@ -21,16 +21,19 @@ BIDI_CONTROLS = frozenset(chr(code) for code in (*range(0x202A, 0x202F), *range(
 
 
 def reject_control_characters(value: str, allow: str = "") -> str:
-    """Refuse NUL, TAB, LF, DEL and the other controls (Unicode category Cc) and the bidi overrides.
+    """Refuse NUL, TAB, LF, DEL and the other controls (Unicode category Cc), the bidi overrides
+    and lone surrogates (category Cs).
 
     PostgreSQL refuses NUL in `text`, so it would otherwise reach the database as an error.
-    A zero-width joiner stays legal: some scripts need it.
+    A lone surrogate has no UTF-8 form: Python's JSON reader accepts `"\\ud800"`, `SecretStr`
+    keeps it, and the hash or the insert then raises. A zero-width joiner stays legal: some
+    scripts need it.
     """
     for character in value:
         if character in allow:
             continue
-        if unicodedata.category(character) == "Cc" or character in BIDI_CONTROLS:
-            raise ValueError("control characters are not allowed")
+        if unicodedata.category(character) in ("Cc", "Cs") or character in BIDI_CONTROLS:
+            raise ValueError("control characters and lone surrogates are not allowed")
     return value
 
 

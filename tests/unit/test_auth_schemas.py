@@ -62,6 +62,18 @@ def test_a_control_character_is_refused_in_a_password(control: str) -> None:
     assert rejected_fields(password=f"long enough {control} password") == {"password"}
 
 
+@pytest.mark.parametrize("code_point", [0xD800, 0xDBFF, 0xDC00, 0xDFFF])
+def test_a_lone_surrogate_is_refused_in_every_text_input(code_point: int) -> None:
+    """It cannot be encoded as UTF-8. A `SecretStr` let it through, and hashing raised a 500."""
+    surrogate = chr(code_point)
+    assert rejected_fields(password=f"long enough {surrogate} password") == {"password"}
+    assert rejected_fields(full_name=f"Jane{surrogate}") == {"full_name"}
+    with pytest.raises(ValidationError):
+        LoginRequest(email="a@example.in", password=surrogate)  # type: ignore[arg-type]
+    with pytest.raises(ValidationError):
+        TokenForm(username="a@example.in", password=surrogate)  # type: ignore[arg-type]
+
+
 def test_a_role_field_is_refused_so_nobody_signs_up_as_admin() -> None:
     """AB6."""
     assert rejected_fields(role="ADMIN") == {"role"}

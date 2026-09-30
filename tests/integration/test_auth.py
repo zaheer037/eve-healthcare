@@ -288,6 +288,15 @@ def test_login_refuses_extra_fields(client: TestClient) -> None:
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("path", ["/auth/login", "/auth/signup"])
+def test_a_lone_surrogate_in_a_password_is_422_and_not_a_500(client: TestClient, path: str) -> None:
+    """Python's JSON reader accepts `\\ud800`, and no UTF-8 encoder does (AB25)."""
+    body = b'{"email":"a@example.in","password":"long enough \\ud800 password"}'
+    response = client.post(path, content=body, headers={"content-type": "application/json"})
+    assert (response.status_code, response.json()["code"]) == (422, "VALIDATION_ERROR")
+    assert [error["field"] for error in response.json()["errors"]] == ["body.password"]
+
+
 # ==== throttle (AB21, AB22, AB35)
 
 
