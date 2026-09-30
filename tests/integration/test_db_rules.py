@@ -1,4 +1,4 @@
-"""Each rule of spec section 5.5 rejects a bad row and accepts a good one."""
+"""Each rule of architecture §3.5 rejects a bad row and accepts a good one."""
 
 import uuid
 from decimal import Decimal

@@ -11,8 +11,8 @@ from sqlalchemy.engine import URL
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# The foreign-key index audit of the spec (section 5.6). It returns the foreign keys that no
-# full index serves, so the result on a healthy schema is empty.
+# The foreign-key index audit of the architecture document (§3.6). It returns the foreign keys
+# that no full index serves, so the result on a healthy schema is empty.
 FK_AUDIT_SQL = """
 SELECT c.conrelid::regclass::text AS table_name, c.conname AS foreign_key
 FROM pg_constraint AS c

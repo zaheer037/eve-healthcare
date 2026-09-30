@@ -1,4 +1,4 @@
-"""settle(): every row of the decision table in spec section 6.3. No database is involved."""
+"""settle(): every row of the decision table in architecture §4.3. No database is involved."""
 
 from datetime import UTC, datetime
 from decimal import Decimal

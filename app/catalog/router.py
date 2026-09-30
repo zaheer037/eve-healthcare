@@ -1,4 +1,4 @@
-"""Public reads and admin writes for centres and diagnostic tests (spec section 7.2).
+"""Public reads and admin writes for centres and diagnostic tests (architecture §5.2).
 
 Each resource has a public router and an admin router. The admin router carries
 `require_admin` on the router itself, so a new admin endpoint cannot ship without the check.

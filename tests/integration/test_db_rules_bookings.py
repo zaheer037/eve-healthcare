@@ -1,4 +1,4 @@
-"""Each rule of spec section 5.5 for bookings, payments and webhook events: a bad row is refused
+"""Each rule of architecture §3.5 for bookings, payments and webhook events: a bad row is refused
 and a good one is accepted."""
 
 import uuid

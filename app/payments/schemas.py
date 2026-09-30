@@ -1,4 +1,4 @@
-"""Request and response models of the payment endpoints and the webhook (spec section 7.6)."""
+"""Request and response models of the payment endpoints and the webhook (architecture §5.6)."""
 
 import uuid
 from typing import Annotated, Literal
@@ -50,7 +50,7 @@ class PaymentRead(PaymentSummary):
 
 
 class WebhookPayload(BaseModel):
-    """One event from the provider (spec section 8.5).
+    """One event from the provider (architecture §6.5).
 
     A provider can add fields, so unknown ones are ignored. Only `payment_id` names anything: the
     receiver derives the booking from its own records and never trusts one in the payload.

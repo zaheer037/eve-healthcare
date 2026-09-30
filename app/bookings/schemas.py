@@ -1,4 +1,4 @@
-"""Request and response models of the booking endpoints (spec section 7.6)."""
+"""Request and response models of the booking endpoints (architecture §5.6)."""
 
 import uuid
 from datetime import datetime
@@ -28,7 +28,7 @@ def _to_the_minute(value: datetime) -> datetime:
 
 
 # A naive datetime is refused: a booking needs an instant. The offset is kept as it came, because
-# the window check compares aware datetimes and never converts them (spec sharp edge 50).
+# the window check compares aware datetimes and never converts them.
 AppointmentAt = Annotated[
     AwareDatetime, BeforeValidator(_text_or_datetime_only), AfterValidator(_to_the_minute)
 ]

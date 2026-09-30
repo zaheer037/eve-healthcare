@@ -1,6 +1,6 @@
 """The catalog over HTTP: public reads, admin writes, filters, paging and soft delete.
 
-Covers AB2, AB15, AB17, AB18 and AB33 of the spec.
+Covers AB2, AB15, AB17, AB18 and AB33 of the architecture document (§7.4).
 """
 
 import uuid
@@ -235,7 +235,7 @@ def test_a_write_without_a_token_is_401(
 
 
 def test_the_admin_check_comes_before_the_body_is_validated(client: TestClient) -> None:
-    """A well-formed body with invalid fields and no token gets 401, not 422 (spec section 4.4)."""
+    """A well-formed body with invalid fields and no token gets 401, not 422 (architecture §2.4)."""
     assert client.post("/centres/", json={"name": ""}).status_code == 401
 
 
@@ -574,7 +574,7 @@ def test_a_race_of_puts_creates_the_price_once(
     assert count(db_session, CentreTest) == 1
 
 
-# ==== statement budgets (spec section 7.2)
+# ==== statement budgets (architecture §5.2)
 
 
 def test_the_statement_budgets_hold_over_http(

@@ -58,7 +58,7 @@ TAGS = [
     {"name": "health", "description": "Probes for the orchestrator."},
 ]
 
-# What any operation can answer, listed once (spec section 7.2).
+# What any operation can answer, listed once (architecture §5.2).
 SHARED_PROBLEMS = problems(BadRequest, PayloadTooLarge, InternalError, ServiceUnavailable)
 
 
@@ -71,7 +71,7 @@ def operation_id(route: APIRoute) -> str:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     # Logging is configured here, not at import time: Uvicorn applies its own logging
-    # configuration after it imports the application module (spec check X).
+    # configuration after it imports the application module.
     configure_logging(settings)
     engine = create_db_engine(settings)
     app.state.engine = engine
@@ -99,7 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         responses=SHARED_PROBLEMS,
         generate_unique_id_function=operation_id,
         lifespan=lifespan,
-        redirect_slashes=False,  # TolerantRouter serves the other spelling (spec section 4.3)
+        redirect_slashes=False,  # TolerantRouter serves the other spelling (architecture §2.3)
         dependencies=[Depends(bind_request_id, scope="function")],
         docs_url="/docs" if docs else None,
         redoc_url="/redoc" if docs else None,

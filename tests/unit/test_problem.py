@@ -1,4 +1,4 @@
-"""Every error renders as RFC 9457 problem JSON with the same fields (spec section 7.3)."""
+"""Every error renders as RFC 9457 problem JSON with the same fields (architecture §5.3)."""
 
 from collections.abc import Iterator
 from types import SimpleNamespace
@@ -229,7 +229,7 @@ def test_an_unexpected_error_is_a_500_with_no_internal_detail(client: TestClient
 
 
 def test_the_500_sets_its_own_request_id_and_cache_headers(client: TestClient) -> None:
-    """The 500 response bypasses the user middleware (sharp edge 51), so the handler sets these."""
+    """The 500 response bypasses the user middleware, so the handler sets these."""
     response = client.get("/crash")
     assert response.headers["x-request-id"] == REQUEST_ID
     assert response.headers["cache-control"] == "no-store"

@@ -1,4 +1,4 @@
-"""Measure the hot queries and the endpoints at 100,000 bookings (spec section 10.1).
+"""Measure the hot queries and the endpoints at 100,000 bookings (architecture §8.1).
 
     uv run python -m scripts.seed --scale 100000      # fill a scratch database
     uv run python -m scripts.perf_report explain      # EXPLAIN ANALYZE of the seven hot queries
@@ -164,7 +164,7 @@ def pick_sample(session: Session) -> Sample:
 
 
 def hot_queries(sample: Sample) -> dict[str, Callable[[Session], object]]:
-    """The seven queries of spec section 10.1, each as the call that the API makes."""
+    """The seven queries of architecture §8.1, each as the call that the API makes."""
 
     def duplicate_guard(session: Session) -> object:
         # The insert is refused by the unique index `uq_bookings_active_slot`. This is the

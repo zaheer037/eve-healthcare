@@ -72,8 +72,8 @@ select = [
 ignore = ["N818"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-"fastapi".msg = "fastapi belongs in routers, dependencies, schemas, core and main only (spec section 4.2)."
-"starlette".msg = "starlette belongs in core and main only (spec section 4.2)."
+"fastapi".msg = "fastapi belongs in routers, dependencies, schemas, core and main only (architecture §2.2)."
+"starlette".msg = "starlette belongs in core and main only (architecture §2.2)."
 
 [tool.ruff.lint.per-file-ignores]
 # Where the HTTP framework is allowed.

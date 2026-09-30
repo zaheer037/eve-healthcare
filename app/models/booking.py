@@ -1,5 +1,5 @@
-"""Bookings (spec section 5.3). The booking is the aggregate root: its payments change only while
-its row is locked (spec section 4.2). Rows are never deleted.
+"""Bookings (architecture §3.3). The booking is the aggregate root: its payments change only while
+its row is locked (architecture §2.2). Rows are never deleted.
 """
 
 import uuid
@@ -22,7 +22,7 @@ class BookingStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
-# A booking in one of these statuses holds its slot and counts against the cap (spec section 7.4).
+# A booking in one of these statuses holds its slot and counts against the cap (architecture §5.4).
 ACTIVE_STATUSES = (BookingStatus.PENDING, BookingStatus.CONFIRMED)
 _ACTIVE_SQL = ", ".join(f"'{status.value}'" for status in ACTIVE_STATUSES)
 
@@ -30,7 +30,7 @@ _ACTIVE_SQL = ", ".join(f"'{status.value}'" for status in ACTIVE_STATUSES)
 class Booking(TimestampMixin, Base):
     __tablename__ = "bookings"
     __table_args__ = (
-        # One composite key: a booking's test is offered at its centre (spec section 5.5).
+        # One composite key: a booking's test is offered at its centre (architecture §3.5).
         ForeignKeyConstraint(
             ["centre_id", "test_id"],
             ["centre_tests.centre_id", "centre_tests.test_id"],
@@ -69,7 +69,7 @@ class Booking(TimestampMixin, Base):
     )
 
     # The composite foreign key points at `centre_tests`, so the ORM sees no key from a booking to
-    # a centre or a test. These relationships spell the join out (spec sharp edge 37). They only
+    # a centre or a test. These relationships spell the join out. They only
     # read: a booking is written through its own columns.
     centre: Mapped[Centre] = relationship(
         viewonly=True,

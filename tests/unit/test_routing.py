@@ -94,7 +94,7 @@ def test_a_405_lists_every_method_the_path_serves(client: TestClient) -> None:
 
 
 def test_a_plain_router_redirects_and_refuses_head() -> None:
-    """The control: the default router is why TolerantRouter exists (spec check O)."""
+    """The control: the default router is why TolerantRouter exists."""
     app = FastAPI()
     plain = APIRouter(prefix="/auth")
     plain.post("/signup", status_code=201)(lambda: {"ok": 1})

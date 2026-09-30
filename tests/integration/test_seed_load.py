@@ -1,4 +1,4 @@
-"""`seed --scale N`: bulk bookings for the performance checks (spec sections 5.6 and 10.1)."""
+"""`seed --scale N`: bulk bookings for the performance checks (architecture §§3.6 and 8.1)."""
 
 import random
 from collections import Counter
@@ -43,7 +43,7 @@ def count(session: Session, model: type[Booking] | type[Payment] | type[User]) -
     return session.scalar(select(func.count()).select_from(model)) or 0
 
 
-# ==== the shape that the spec promises
+# ==== the shape that the design promises
 
 
 def test_scale_adds_the_bookings_over_a_tenth_as_many_users(seeded: Session) -> None:

@@ -2,7 +2,7 @@
 
 The in-process tests see structlog events before they are rendered. Only a real process shows what
 Uvicorn adds on its own: an access log with the query string, and the traceback of an unhandled
-error with the `DETAIL` line of PostgreSQL, which echoes row values (spec sharp edge 42).
+error with the `DETAIL` line of PostgreSQL, which echoes row values.
 """
 
 import os

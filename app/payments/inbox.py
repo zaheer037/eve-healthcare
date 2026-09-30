@@ -1,4 +1,4 @@
-"""The webhook inbox (spec section 8.2): one row per event, and the gate against duplicates."""
+"""The webhook inbox (architecture §6.2): one row per event, and the gate against duplicates."""
 
 import uuid
 from datetime import datetime
@@ -16,13 +16,13 @@ class WebhookInbox:
         self._session = session
 
     def record(self, provider: str, payload: WebhookPayload) -> uuid.UUID | None:
-        """Store an event, or say that it is a duplicate. Layer 1 of the four (spec 8.2).
+        """Store an event, or say that it is a duplicate. Layer 1 of the four (architecture §6.2).
 
         `INSERT ... ON CONFLICT DO NOTHING RETURNING id` runs in the same transaction as the state
         change. A second insert of the same event waits for the first transaction, then inserts
         nothing (it committed) or inserts the row (it rolled back). The row has no payment yet:
-        `payment_id` is set at the end, so this insert takes no lock on the payment (sharp edge
-        29). The stored payload holds the validated fields, so it can never carry a NUL byte.
+        `payment_id` is set at the end, so this insert takes no lock on the payment. The stored
+        payload holds the validated fields, so it can never carry a NUL byte.
         """
         stmt = (
             insert(WebhookEvent)

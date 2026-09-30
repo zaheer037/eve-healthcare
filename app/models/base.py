@@ -1,4 +1,4 @@
-"""The declarative base, the naming convention and the column helpers (spec section 5.2)."""
+"""The declarative base, the naming convention and the column helpers (architecture §3.2)."""
 
 from datetime import datetime
 from decimal import Decimal
@@ -35,7 +35,7 @@ class Base(DeclarativeBase):
 class TimestampMixin:
     """`created_at` and `updated_at`, last in the table. The ORM sets `updated_at` on change.
 
-    An upsert bypasses `onupdate`, so it sets `updated_at=func.now()` itself (sharp edge 36).
+    An upsert bypasses `onupdate`, so it sets `updated_at=func.now()` itself.
     """
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), sort_order=90)
@@ -49,7 +49,7 @@ def str_enum(enum_class: type[StrEnum], name: str) -> Enum:
 
     A bare `Mapped[SomeStrEnum]` would create a native PostgreSQL enum type that stores member
     names. A test asserts that the schema has no native enum. Alembic never updates the CHECK,
-    so a new member needs a hand-written migration (spec section 15.1, change 4).
+    so a new member needs a hand-written migration.
     """
     return Enum(
         enum_class,

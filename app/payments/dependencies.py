@@ -1,4 +1,4 @@
-"""The webhook's raw-body dependency (spec sections 4.4 and 8.5)."""
+"""The webhook's raw-body dependency (architecture §§2.4 and 6.5)."""
 
 import structlog
 from fastapi import Request

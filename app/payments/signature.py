@@ -1,4 +1,4 @@
-"""Webhook signatures (spec section 8.5). Pure functions over the standard library.
+"""Webhook signatures (architecture §6.5). Pure functions over the standard library.
 
 The header is `X-Webhook-Signature: t=<unix seconds>,v1=<hex>`, and `v1` is
 `HMAC_SHA256(secret, f"{t}." + raw_body)`. The signature covers the raw bytes, so it must be

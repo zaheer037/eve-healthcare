@@ -1,4 +1,4 @@
-"""Payment and webhook models (spec sections 7.6 and 8.5)."""
+"""Payment and webhook models (architecture §§5.6 and 6.5)."""
 
 import json
 import uuid

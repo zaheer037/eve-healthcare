@@ -1,8 +1,8 @@
-"""The in-process payment provider (spec section 8.1).
+"""The in-process payment provider (architecture §6.1).
 
 It answers at once and does no I/O, so `pay` fits in one short transaction and no lock spans a
-network call. A real gateway needs the two-phase flow of section 8.6, and this class is the one
-boundary that then gets a second implementation.
+network call. A real gateway needs the two-phase flow of architecture §6.6, and this class is
+the one boundary that then gets a second implementation.
 """
 
 import random
@@ -27,7 +27,8 @@ class PaymentSimulator:
 
         `override` forces the result: `SUCCESS`, `FAILED`, or `PENDING` for "the provider confirms
         by webhook". Without it, the dice decide with the configured success rate. The reference
-        names the payment, so a webhook event that carries the same one is a no-op (spec 6.3).
+        names the payment, so a webhook event that carries the same one is a no-op
+        (architecture §4.3).
         """
         if override is PaymentStatus.PENDING:
             return None

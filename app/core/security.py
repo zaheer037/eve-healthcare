@@ -1,4 +1,4 @@
-"""Passwords, access tokens and hashing slots (spec section 9.2)."""
+"""Passwords, access tokens and hashing slots (architecture §7.2)."""
 
 import secrets
 import threading
@@ -22,7 +22,7 @@ REQUIRED_CLAIMS = ["exp", "sub", "iss", "aud"]
 # parameters, so the cost can rise later and old hashes still verify.
 _password_hash = PasswordHash.recommended()
 
-# PyJWT only warns about an HMAC key under 32 bytes unless this option is on (sharp edge 49).
+# PyJWT only warns about an HMAC key under 32 bytes unless this option is on.
 jwt_api = jwt.PyJWT(options={"enforce_minimum_key_length": True})
 
 
@@ -52,7 +52,7 @@ def dummy_hash() -> str:
 def create_access_token(user_id: uuid.UUID, settings: Settings) -> tuple[str, int]:
     """Return the token and its lifetime in seconds.
 
-    The token uses the real clock, because PyJWT checks `iat` and `exp` against it (sharp edge 40).
+    The token uses the real clock, because PyJWT checks `iat` and `exp` against it.
     It holds no role: the service reads the role from the database, so a role change is instant.
     """
     issued_at = datetime.now(UTC)
@@ -93,7 +93,7 @@ class HashSlots:
     """A fixed number of password hashes may run at once. Nobody waits for a slot.
 
     A hash costs CPU and 64 MiB. A request that waits for a slot inside a pool thread would hold
-    that thread, and a burst of logins then starves the pool (spec sharp edge 43). So a caller
+    that thread, and a burst of logins then starves the pool. So a caller
     takes a slot without blocking, on the event loop, and gets a 503 at once when all are taken.
     """
 

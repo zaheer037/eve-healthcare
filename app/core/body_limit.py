@@ -14,7 +14,7 @@ class BodyLimitMiddleware:
     A `Content-Length` header decides at once. A chunked body has no length, so the middleware
     reads at most `max_bytes` into memory and replays it to the application. Starlette's own
     middleware answers `text/plain` instead, and for a route without a body it runs the handler
-    first (spec section 4.3).
+    first (architecture §2.3).
     """
 
     def __init__(self, app: ASGIApp, max_bytes: int) -> None:

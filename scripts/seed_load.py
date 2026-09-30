@@ -1,4 +1,4 @@
-"""Bulk bookings for the performance checks: `python -m scripts.seed --scale N` (spec 5.6, 10.1).
+"""Bulk bookings for the performance checks: `python -m scripts.seed --scale N`.
 
 It adds N bookings on the seeded catalog, spread over N / 10 users, so each user holds about ten.
 The statuses follow a fixed mix, and every booking gets the payment that its status implies. The

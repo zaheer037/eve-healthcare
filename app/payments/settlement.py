@@ -1,4 +1,4 @@
-"""Settlement (spec section 6.3): the one place that changes a payment's status.
+"""Settlement (architecture §4.3): the one place that changes a payment's status.
 
 The payment path and the webhook path both call `settle()`. The caller holds the booking's row
 lock and commits. The function does no I/O, so a test walks the whole decision table without a
@@ -56,7 +56,7 @@ def settle(
 ) -> Settlement:
     """Apply a terminal provider result to a payment and its booking.
 
-    Each branch below is a row of the table in spec section 6.3. A repeated result changes
+    Each branch below is a row of the table in architecture §4.3. A repeated result changes
     nothing, and a contradicting one is left for an operator (`NEEDS_REVIEW`).
     """
     if payment.status is result.status:

@@ -39,7 +39,7 @@ class BookingService:
         test_id: uuid.UUID,
         appointment_at: datetime,
     ) -> Booking:
-        """Book a test at a centre for one user. Three statements (spec section 7.4).
+        """Book a test at a centre for one user. Three statements (architecture §5.4).
 
         The booking copies the price that it reads here, so a later price change leaves it alone.
         The cap is soft: two simultaneous requests can both pass the count. `# ponytail: soft cap
@@ -114,7 +114,7 @@ class BookingService:
         """Cancel the user's booking. A repeated cancel is a no-op that answers the same.
 
         The row lock makes the check for a pending payment and the status change one step
-        against a payment or a webhook (spec section 4.2). A refund is out of scope, so a paid
+        against a payment or a webhook (architecture §2.2). A refund is out of scope, so a paid
         booking keeps its `SUCCESS` payment (assumption A7).
 
         Raises:

@@ -1,6 +1,6 @@
 """The bookings over HTTP: create, list, read and cancel.
 
-Covers AB1, AB3, AB7, AB27 and AB29 of the spec.
+Covers AB1, AB3, AB7, AB27 and AB29 of the architecture document (§7.4).
 """
 
 import threading
@@ -565,7 +565,7 @@ def test_cancel_is_not_a_patch_a_client_cannot_write_a_status(
     assert "PATCH" not in response.headers["allow"]
 
 
-# ==== the row lock (spec section 4.2)
+# ==== the row lock (architecture §2.2)
 
 
 def test_a_stranger_is_told_403_at_once_while_the_owner_holds_the_row_lock(
@@ -625,7 +625,7 @@ def test_ten_cancels_at_once_all_answer_200_and_the_booking_ends_cancelled(
     assert db_session.get(Booking, booking.id).status is BookingStatus.CANCELLED  # type: ignore[union-attr]
 
 
-# ==== statement budgets (spec section 7.2)
+# ==== statement budgets (architecture §5.2)
 
 
 def test_the_statement_budgets_hold_over_http(

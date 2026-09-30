@@ -289,7 +289,7 @@ def test_the_same_slot_by_another_user_or_after_a_cancel_is_not_a_duplicate(
     assert book(service, first.id, offering.centre_id, offering.test_id, when)  # the slot is free
 
 
-# ==== the statement budget (spec section 7.2)
+# ==== the statement budget (architecture §5.2)
 
 
 def test_a_booking_takes_three_statements(

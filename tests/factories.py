@@ -1,4 +1,4 @@
-"""Plain functions that insert rows through SQLAlchemy (spec section 11.2).
+"""Plain functions that insert rows through SQLAlchemy (architecture §9.2).
 
 Each factory fills every required column with a valid value and lets a test override only what
 it asserts on. It commits, so the rows are visible to the app's own sessions.

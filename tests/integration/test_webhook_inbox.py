@@ -1,4 +1,4 @@
-"""The webhook inbox: one row per event, and the gate that makes a duplicate harmless (spec 8.2)."""
+"""The webhook inbox: one row per event, and the gate that makes a duplicate harmless (§6.2)."""
 
 import threading
 import time
@@ -82,7 +82,7 @@ def test_the_same_event_again_is_a_duplicate_and_stores_nothing_more(
 def test_a_reused_event_id_is_a_duplicate_even_when_the_body_differs(
     session: Session, db_session: Session
 ) -> None:
-    """A ponytail of the spec: no payload comparison."""
+    """A ponytail of the design: no payload comparison."""
     inbox = WebhookInbox(session)
     inbox.record(PROVIDER, payload("evt_1"))
     session.commit()
@@ -145,7 +145,7 @@ def test_an_event_about_an_unknown_payment_is_marked_without_a_payment(
     assert (stored.outcome, stored.payment_id) == (WebhookOutcome.REJECTED, None)
 
 
-# ==== the gate under concurrency (spec section 8.2)
+# ==== the gate under concurrency (architecture §6.2)
 
 
 def record_in_thread(
@@ -178,7 +178,7 @@ def test_a_second_insert_waits_for_the_first_transaction_and_follows_its_fate(
     assert (results[0] is None) is first_commits
 
 
-# ==== the index that spec section 5.4 names
+# ==== the index that architecture §3.4 names
 
 
 def test_the_gate_arbitrates_on_the_unique_event_index(db_engine: Engine) -> None:

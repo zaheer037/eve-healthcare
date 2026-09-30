@@ -1,4 +1,4 @@
-"""Request and response models of the auth endpoints (spec section 7.6)."""
+"""Request and response models of the auth endpoints (architecture §5.6)."""
 
 import unicodedata
 import uuid

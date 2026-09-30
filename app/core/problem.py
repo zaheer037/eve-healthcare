@@ -1,4 +1,4 @@
-"""RFC 9457 problem responses: one format for every error (spec section 7.3)."""
+"""RFC 9457 problem responses: one format for every error (architecture §5.3)."""
 
 from http import HTTPStatus
 from typing import Any, cast
@@ -198,7 +198,7 @@ async def handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
     """The catch-all 500.
 
     Starlette sends this response from `ServerErrorMiddleware`, outside every user middleware.
-    So the handler sets the request ID and the cache headers itself (sharp edge 51).
+    So the handler sets the request ID and the cache headers itself.
     """
     request_id = request_id_of(request.scope)
     log.error(

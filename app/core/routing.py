@@ -11,7 +11,7 @@ class TolerantRouter(APIRouter):
 
     The PDF fixes `/payments/` and `/payments/webhook/`. A sender such as a payment provider
     treats a redirect as a failed delivery, so the other spelling is a second route, not a 307.
-    Only the canonical spelling appears in OpenAPI (sharp edges 10 and 46). The app must also set
+    Only the canonical spelling appears in OpenAPI. The app must also set
     `redirect_slashes=False`.
     """
 

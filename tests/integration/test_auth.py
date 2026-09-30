@@ -1,6 +1,6 @@
 """Signup, login, token and the current user, over HTTP against a real database.
 
-Covers AB1, AB6, AB16, AB19, AB21, AB22, AB25 and AB35 of the spec.
+Covers AB1, AB6, AB16, AB19, AB21, AB22, AB25 and AB35 of the architecture document (§7.4).
 """
 
 import uuid
@@ -162,7 +162,7 @@ def test_a_missing_field_is_a_422(client: TestClient) -> None:
 def test_signup_runs_one_statement(
     app: FastAPI, client: TestClient, query_counter: QueryCounter
 ) -> None:
-    """The budget of the spec: one INSERT ... RETURNING and no pre-check SELECT."""
+    """The budget of the design: one INSERT ... RETURNING and no pre-check SELECT."""
     with query_counter:
         assert post_signup(client).status_code == 201
     assert query_counter.count == 1
@@ -250,7 +250,7 @@ def test_an_unknown_email_and_a_wrong_password_give_the_same_401(
 def test_an_unknown_email_is_verified_against_the_dummy_hash(
     app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The dummy hash runs, so the response time matches a wrong password (sharp edge on timing)."""
+    """The dummy hash runs, so an unknown email takes as long as a wrong password."""
     hashes_verified: list[str] = []
 
     def spy(plain: str, hashed: str) -> bool:
@@ -265,7 +265,7 @@ def test_an_unknown_email_is_verified_against_the_dummy_hash(
 def test_a_login_email_that_no_signup_would_accept_can_still_log_in(
     client: TestClient, db_session: Session
 ) -> None:
-    """The seeded admin may sit at a reserved domain that EmailStr refuses (spec check AD)."""
+    """The seeded admin may sit at a reserved domain that EmailStr refuses."""
     admin = make_user(
         db_session, email="admin@eve.local", password_hash=PASSWORD_HASH, role=Role.ADMIN
     )
@@ -370,7 +370,7 @@ def test_a_request_that_fails_validation_does_not_count_against_the_ip_limit(
 def test_a_spoofed_forwarded_for_header_does_not_change_the_throttle_key(
     test_settings: Settings,
 ) -> None:
-    """AB35: behind a proxy, the key is the address that the proxy appended (spec check AC)."""
+    """AB35: behind a proxy, the key is the address that the proxy appended."""
     settings = test_settings.model_copy(update={"auth_ip_limit_per_minute": 3})
     proxied = ProxyHeadersMiddleware(create_app(settings), trusted_hosts=["203.0.113.9"])
     real_address = "198.51.100.7"

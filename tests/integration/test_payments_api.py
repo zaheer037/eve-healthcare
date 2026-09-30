@@ -1,4 +1,4 @@
-"""Paying a booking and reading a payment over HTTP (spec sections 7.4 and 8.1).
+"""Paying a booking and reading a payment over HTTP (architecture §§5.4 and 6.1).
 
 Covers AB4, AB5, AB20, AB30 and AB31.
 """
@@ -331,7 +331,7 @@ def test_an_unknown_payment_is_404_a_malformed_id_is_422_and_no_token_is_401(
     assert client.get(f"/payments/{uuid.uuid4()}").status_code == 401
 
 
-# ==== the statement budgets (spec section 7.2)
+# ==== the statement budgets (architecture §5.2)
 
 
 def test_the_statement_budgets_hold_over_http(

@@ -1,4 +1,4 @@
-"""Booking request and response models (spec section 7.6)."""
+"""Booking request and response models (architecture §5.6)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta, timezone

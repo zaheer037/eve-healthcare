@@ -25,7 +25,7 @@ RETRY_PAUSE_SECONDS = (0.005, 0.05)
 
 
 def connection_options(settings: Settings) -> str:
-    """The server settings that every connection starts with (spec sections 8.3 and 10.1).
+    """The server settings that every connection starts with (architecture §§6.3 and 8.1).
 
     A lock timeout ends a wait for a row lock. A statement timeout ends a slow query. Both reach
     the client as SQLSTATE 55P03 or 57014, which the handlers map to a 503.
@@ -67,7 +67,8 @@ def is_transient(error: Exception, retry_on_constraints: frozenset[str] = frozen
     """Would running the whole transaction again fix this error?
 
     A deadlock and a serialization failure would. So does a unique violation on one of the named
-    constraints, when a rival transaction took the value between a check and a write (spec 8.3).
+    constraints, when a rival transaction took the value between a check and a write
+    (architecture §6.3).
     A lock timeout (55P03) is not transient: the wait already took `lock_timeout`, and the caller
     is better off telling its own client to retry.
     """
@@ -110,8 +111,8 @@ def transaction(session: Session) -> Iterator[None]:
     """One use case, one transaction: commit when the block ends, roll back when it raises.
 
     A service method that writes or locks runs inside it. Every lock is then released before
-    FastAPI serialises the response, and a refusal never leaves a transaction open (spec section
-    4.2).
+    FastAPI serialises the response, and a refusal never leaves a transaction open
+    (architecture §2.2).
     """
     try:
         yield
@@ -125,7 +126,7 @@ def transaction(session: Session) -> Iterator[None]:
 def domain_errors(session: Session, by_constraint: Mapping[str, AppError]) -> Iterator[None]:
     """Turn a violated constraint into the domain error that names it.
 
-    The rollback comes first, so the session stays usable (spec section 4.2). A constraint that
+    The rollback comes first, so the session stays usable (architecture §2.2). A constraint that
     is not in the mapping is a bug or an outage, so it is raised unchanged. Build the errors for
     each call: an exception carries its traceback, so one instance must not serve two requests.
     """
@@ -150,5 +151,5 @@ def get_session(request: Request) -> Iterator[Session]:
 
 
 # scope="function": the exit code runs when the handler returns, before the response is sent,
-# so the connection goes back to the pool even when the client is slow (spec section 4.4, step 11).
+# so the connection goes back to the pool even when the client is slow (architecture §2.4, step 11).
 SessionDep = Annotated[Session, Depends(get_session, scope="function")]

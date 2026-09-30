@@ -35,7 +35,7 @@ def test_a_malformed_signup_email_is_refused(email: str) -> None:
 
 
 def test_a_reserved_domain_is_refused_at_signup() -> None:
-    """email-validator refuses .local and .test, so a seed admin cannot use them (check AD)."""
+    """email-validator refuses .local and .test, so a seed admin cannot use them."""
     assert rejected_fields(email="admin@eve.local") == {"email"}
 
 

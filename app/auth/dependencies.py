@@ -19,7 +19,7 @@ from app.core.throttle import LoginThrottle
 from app.models.user import Role, User
 
 # auto_error=False: a missing header must give our problem response, not FastAPI's own.
-# The scheme also makes Swagger UI show the Authorize button (decision D4).
+# The scheme also makes Swagger UI show the Authorize button (ADR-08).
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
 
@@ -52,7 +52,7 @@ def require_admin(user: CurrentUser) -> User:
 
 
 def client_ip(request: Request) -> str:
-    """The address that Uvicorn's proxy-header handling puts in the scope (spec section 9.2)."""
+    """The address that Uvicorn's proxy-header handling puts in the scope (architecture §7.2)."""
     return request.client.host if request.client else "unknown"
 
 

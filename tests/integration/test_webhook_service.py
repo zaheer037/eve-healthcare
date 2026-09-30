@@ -1,4 +1,4 @@
-"""PaymentService.handle_webhook on a real database (spec sections 6.3, 8.2 and 8.5).
+"""PaymentService.handle_webhook on a real database (architecture §§4.3, 6.2 and 6.5).
 
 Covers AB10 to AB13, AB23 and AB24 at the service level. The HTTP layer has its own tests.
 """
@@ -113,7 +113,7 @@ def test_the_event_row_ends_with_its_outcome_its_payment_and_its_time(
     assert stored.payload["status"] == "SUCCESS"
 
 
-# ==== the four layers of idempotency (spec section 8.2)
+# ==== the four layers of idempotency (architecture §6.2)
 
 
 def test_the_same_event_twice_is_a_duplicate_and_changes_nothing(
@@ -344,7 +344,7 @@ def test_processed_and_duplicate_events_are_logged_at_info_and_warning(
     )
 
 
-# ==== the statement budget (spec section 7.2)
+# ==== the statement budget (architecture §5.2)
 
 
 def test_the_statement_counts_are_eight_six_one_and_three(

@@ -1,4 +1,4 @@
-"""Settings: one class reads the environment and is validated at start-up (spec section 10.3).
+"""Settings: one class reads the environment and is validated at start-up (architecture §8.3).
 
 The application does not start when a value is invalid. `ENVIRONMENT` has no default, so a
 typo in its name stops the start-up instead of falling back to development defaults.
@@ -12,7 +12,7 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 MIN_SECRET_BYTES = 32
-# The compose defaults and the example secret in the spec start with one of these.
+# The compose defaults and the example secret in the documentation start with one of these.
 PLACEHOLDER_PREFIXES = ("dev-only-", "whsec_demo_only_", "change-me")
 
 
@@ -44,7 +44,7 @@ class Settings(DatabaseSettings):
     db_max_overflow: int = Field(default=10, ge=0)
     db_pool_timeout: int = Field(default=10, ge=1)
     db_statement_timeout_ms: int = Field(default=5000, ge=1)
-    # Two lock timeouts stay inside the 5-second webhook budget (spec section 8.4).
+    # Two lock timeouts stay inside the 5-second webhook budget (architecture §6.4).
     db_lock_timeout_ms: int = Field(default=2000, ge=1)
 
     # Authentication
@@ -52,7 +52,7 @@ class Settings(DatabaseSettings):
     jwt_issuer: str = "eve-healthcare-auth"
     jwt_audience: str = "eve-healthcare-api"
     access_token_minutes: int = Field(default=30, ge=1)
-    password_min_length: int = Field(default=15, ge=8, le=128)  # decision D12
+    password_min_length: int = Field(default=15, ge=8, le=128)  # ADR-13
     hash_max_concurrency: int = Field(default=4, ge=1)
     login_max_failures: int = Field(default=10, ge=1)
     login_failure_window_minutes: int = Field(default=15, ge=1)
@@ -63,7 +63,7 @@ class Settings(DatabaseSettings):
 
     # Payments and webhook
     webhook_secret: SecretStr
-    webhook_signature_required: bool = True  # production refuses False (decision D11)
+    webhook_signature_required: bool = True  # production refuses False (ADR-06)
     webhook_tolerance_seconds: int = Field(default=300, ge=1)
     payment_success_rate: float = Field(default=0.8, ge=0, le=1)
     payment_allow_simulate_override: bool = Field(

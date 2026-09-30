@@ -1,4 +1,4 @@
-"""A database that cannot answer in time is a 503 that asks for a retry (spec section 8.3).
+"""A database that cannot answer in time is a 503 that asks for a retry (architecture §6.3).
 
 A lock timeout, a statement timeout and an exhausted pool are all "try again", on the read path and
 the pay path as well as on the webhook. The provider's or the client's own retry is the right tool,

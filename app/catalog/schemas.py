@@ -1,4 +1,4 @@
-"""Request and response models of the catalog endpoints (spec section 7.6)."""
+"""Request and response models of the catalog endpoints (architecture §5.6)."""
 
 import uuid
 from decimal import Decimal

@@ -1,4 +1,4 @@
-"""Liveness and readiness probes. Compose and Docker use them (spec section 10.2)."""
+"""Liveness and readiness probes. Compose and Docker use them (architecture §8.2)."""
 
 from typing import Literal
 

@@ -1,6 +1,6 @@
 """Structured logging: JSON on standard output, with secrets and personal data kept out.
 
-What the log must never hold (spec section 10.2):
+What the log must never hold (architecture §8.2):
 - secrets: a processor removes keys such as `password` and `token`;
 - local variables: the exception renderer runs with `show_locals=False`;
 - database error text: PostgreSQL echoes row values such as `Key (email)=(a@x.in)`, so a database
@@ -57,7 +57,7 @@ def scrub_database_errors(
     """Reduce a database error to its class, SQLSTATE and constraint name.
 
     It walks `__cause__` and `__context__`, so a database error wrapped in another exception is
-    scrubbed too (sharp edge 33). The traceback goes with it, because the traceback text carries
+    scrubbed too. The traceback goes with it, because the traceback text carries
     the error message.
     """
     current = _exception_of(event_dict.get("exc_info"))
@@ -88,7 +88,7 @@ def protect_uvicorn_loggers() -> None:
     """Silence the access log (it prints query strings) and drop tracebacks from `uvicorn.error`.
 
     This must run in the lifespan start-up. Uvicorn applies its own logging configuration after
-    the application module is imported, so a call at import time is too early (spec check X).
+    the application module is imported, so a call at import time is too early.
     """
     logging.getLogger("uvicorn.access").disabled = True
     error_logger = logging.getLogger("uvicorn.error")
@@ -105,7 +105,7 @@ def configure_logging(settings: Settings) -> None:
         scrub_database_errors,
     ]
     if settings.log_format == "json":
-        # The default renderer prints local variables, a password among them (spec check A).
+        # The default renderer prints local variables, a password among them.
         processors.append(
             structlog.processors.ExceptionRenderer(ExceptionDictTransformer(show_locals=False))
         )

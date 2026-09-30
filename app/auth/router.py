@@ -1,4 +1,4 @@
-"""Signup, login, token and the current user (spec section 7.4)."""
+"""Signup, login, token and the current user (architecture §5.4)."""
 
 from typing import Annotated
 

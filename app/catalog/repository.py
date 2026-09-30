@@ -1,4 +1,4 @@
-"""Catalog queries. SQL only: no business rule and no commit (spec section 4.2)."""
+"""Catalog queries. SQL only: no business rule and no commit (architecture §2.2)."""
 
 import uuid
 from dataclasses import dataclass
@@ -181,13 +181,13 @@ class CatalogRepository:
         currency: str,
         is_available: bool,
     ) -> tuple[OfferedTest, bool]:
-        """Create or replace the price of a test at a centre, in ONE statement (spec section 7.2).
+        """Create or replace the price of a test at a centre, in ONE statement (architecture §5.2).
 
         A CTE runs the upsert and the outer SELECT adds the test's code and name. `xmax` is 0 on a
         row that this statement inserted and non-zero on one that it updated, so the same statement
         also says which of the two happened. A missing centre or test violates a named foreign
         key, and the service maps the name to a 404. An upsert skips the ORM's `onupdate`, so
-        `updated_at` is set here (sharp edge 36).
+        `updated_at` is set here.
         """
         row = insert(CentreTest).values(
             centre_id=centre_id,

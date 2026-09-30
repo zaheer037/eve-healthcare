@@ -1,4 +1,4 @@
-"""The webhook's raw-body dependency: signature first, then the body (spec sections 4.4, 8.5)."""
+"""The webhook's raw-body dependency: signature first, then the body (architecture §§2.4, 6.5)."""
 
 import time
 import uuid

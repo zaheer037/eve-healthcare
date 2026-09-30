@@ -97,7 +97,7 @@ def test_a_user_at_the_cap_may_not(active: int) -> None:
         check_active_cap(active=active, cap=20)
 
 
-# ==== who sees what (decision D3)
+# ==== who sees what (ADR-07)
 
 
 def test_a_booking_that_exists_but_is_not_yours_is_forbidden() -> None:

@@ -1,4 +1,4 @@
-"""The error catalogue: one `ErrorCode` per `AppError` subclass (spec section 7.3).
+"""The error catalogue: one `ErrorCode` per `AppError` subclass (architecture §5.3).
 
 Clients switch on the code. Status and title live in one table (`ERROR_SPECS`). A subclass only
 names its code, so adding an error is one enum member, one table row and one class.

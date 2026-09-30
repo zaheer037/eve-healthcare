@@ -1,4 +1,4 @@
-"""The user table (spec section 5.3)."""
+"""The user table (architecture §3.3)."""
 
 import uuid
 from enum import StrEnum

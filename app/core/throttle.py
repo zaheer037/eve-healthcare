@@ -1,6 +1,6 @@
 """The auth throttle: a limit per client IP and a limit on failed logins per account.
 
-It uses the `limits` library with in-memory storage and a moving window (spec section 9.2).
+It uses the `limits` library with in-memory storage and a moving window (architecture §7.2).
 `# ponytail: in-memory counters are per process and only grow -> use Redis storage
 (limits[redis], with expiry) before public exposure or with more than one worker`.
 """

@@ -1,7 +1,7 @@
-"""Payments and the webhook inbox (spec section 5.3).
+"""Payments and the webhook inbox (architecture §3.3).
 
 A payment belongs to a booking, and the booking is the aggregate root: no payment changes without
-the booking's row lock (spec section 4.2). Rows are never deleted.
+the booking's row lock (architecture §2.2). Rows are never deleted.
 """
 
 import uuid
@@ -61,7 +61,7 @@ class Payment(TimestampMixin, Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    # A full index: a partial one cannot serve the foreign key check (spec section 5.4).
+    # A full index: a partial one cannot serve the foreign key check (architecture §3.4).
     booking_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("bookings.id", ondelete="RESTRICT"), index=True
     )
@@ -82,7 +82,7 @@ class WebhookEvent(Base):
     """A payment event that a provider delivered. Every signed and valid event is stored once.
 
     `outcome` and `processed_at` are empty only inside the transaction that handles the event.
-    `payment_id` stays empty until the handler has locked the payment (sharp edge 29).
+    `payment_id` stays empty until the handler has locked the payment.
     """
 
     __tablename__ = "webhook_events"

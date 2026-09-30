@@ -1,4 +1,4 @@
-"""The error catalogue: one ErrorCode per AppError subclass, with the status of spec section 7.3."""
+"""The error catalogue: one ErrorCode per AppError subclass, with the status of §5.3."""
 
 import pytest
 

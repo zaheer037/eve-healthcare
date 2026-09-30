@@ -13,8 +13,9 @@ from app.core.config import Settings
 
 SettingsFactory = Callable[..., Settings]
 
-# The authentication lookup of every protected request. The query budgets of the spec leave it out,
-# so `QueryCounter(engine, ignore=(AUTH_LOOKUP,))` counts what the handler itself runs.
+# The authentication lookup of every protected request. The query budgets of the architecture
+# document leave it out, so `QueryCounter(engine, ignore=(AUTH_LOOKUP,))` counts what the handler
+# itself runs.
 AUTH_LOOKUP = "WHERE users.id = "
 
 
@@ -98,7 +99,7 @@ def indexes_used(engine: Engine, action: Callable[[], object]) -> set[str]:
 
     A table of a few rows is read with a sequential scan even when a fitting index exists, so
     the plans are made with sequential scans off. That shows which indexes the planner can use,
-    and this is what the index plan of spec section 5.4 promises. `EXPLAIN` runs nothing, so it
+    and this is what the index plan of architecture §3.4 promises. `EXPLAIN` runs nothing, so it
     is safe for an `UPDATE` or an `INSERT` too.
     """
     seen: list[tuple[str, Any]] = []

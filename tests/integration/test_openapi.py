@@ -1,7 +1,7 @@
-"""The OpenAPI document and the HTTP conventions, checked against the spec (sections 7.1, 7.2).
+"""The OpenAPI document and the HTTP conventions, checked against architecture §§5.1 and 5.2.
 
-The inventory below is table 7.2 of the spec. When an endpoint changes, this table changes with it,
-and the documentation cannot drift from the code without a test failing.
+The inventory below is table 5.2 of the architecture document. When an endpoint changes, this
+table changes with it, and the documentation cannot drift from the code without a test failing.
 """
 
 import re
@@ -11,14 +11,14 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-SHARED = {400, 413, 500, 503}  # every operation can answer these (spec section 7.2)
+SHARED = {400, 413, 500, 503}  # every operation can answer these (architecture §5.2)
 
 
 def expect(*success: int, errors: tuple[int, ...] = ()) -> tuple[set[int], set[int]]:
     return set(success), set(errors)
 
 
-# (method, path) -> (success statuses, error statuses that section 7.2 lists)
+# (method, path) -> (success statuses, error statuses that architecture §5.2 lists)
 INVENTORY: dict[tuple[str, str], tuple[set[int], set[int]]] = {
     ("GET", "/health/live"): expect(200),
     ("GET", "/health/ready"): expect(200),
@@ -172,7 +172,7 @@ def test_the_login_and_the_webhook_document_their_special_inputs(schema: dict[st
     assert any(p["name"] == "X-Webhook-Signature" for p in webhook["parameters"])
 
 
-# ==== HTTP conventions that hold for every route (spec section 7.1)
+# ==== HTTP conventions that hold for every route (architecture §5.1)
 
 
 def sample(path: str) -> str:

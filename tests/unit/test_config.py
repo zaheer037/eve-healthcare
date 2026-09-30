@@ -1,4 +1,4 @@
-"""Settings: defaults per environment, and every start-up refusal (AB26, design check K)."""
+"""Settings: defaults per environment, and every start-up refusal (AB26)."""
 
 import pytest
 from pydantic import ValidationError

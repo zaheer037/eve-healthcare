@@ -1,4 +1,4 @@
-"""Passwords, access tokens and hashing slots (spec section 9.2)."""
+"""Passwords, access tokens and hashing slots (architecture §7.2)."""
 
 import re
 import threading
@@ -181,7 +181,7 @@ def test_garbage_is_rejected(settings: Settings, garbage: str) -> None:
 
 
 def test_the_minimum_key_length_is_enforced() -> None:
-    """PyJWT only warns about a short HMAC key unless the option is on (sharp edge 49)."""
+    """PyJWT only warns about a short HMAC key unless the option is on."""
     with pytest.raises(jwt.InvalidKeyError):
         jwt_api.encode({"sub": "x"}, "short", algorithm="HS256")
 

@@ -1,4 +1,4 @@
-"""Races on one booking: pay against cancel, and the webhook against cancel (spec section 8.3).
+"""Races on one booking: pay against cancel, and the webhook against cancel (architecture §6.3).
 
 The booking row lock serialises them. Whichever runs first, the final pair of states must be one of
 the valid pairs below, and never a mixture such as a paid booking that is still pending.
@@ -91,7 +91,7 @@ def test_pay_against_cancel_always_ends_in_a_valid_pair_of_states(
     assert seen <= valid, f"invalid final states: {seen - valid}"
 
 
-# The webhook against cancel, with a pending payment (spec 8.3, "PENDING mode, step by step").
+# The webhook against cancel, with a pending payment (architecture §6.3, "PENDING mode").
 VALID_WEBHOOK_AGAINST_CANCEL: set[Final] = {
     (200, 409, "CONFIRMED", ("SUCCESS",)),  # cancel first: refused, then the webhook confirms
     (200, 200, "CANCELLED", ("SUCCESS",)),  # webhook first: the confirmed booking is cancelled

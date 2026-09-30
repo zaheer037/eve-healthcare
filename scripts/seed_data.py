@@ -1,4 +1,4 @@
-"""The sample catalog that the seed script inserts (spec section 5.6).
+"""The sample catalog that the seed script inserts (architecture §3.6).
 
 The data is made up. Every value passes the same schema that the API applies to an admin's input,
 and a unit test checks that.

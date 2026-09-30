@@ -1,4 +1,4 @@
-"""The webhook over HTTP (spec sections 7.4 and 8.5).
+"""The webhook over HTTP (architecture §§5.4 and 6.5).
 
 Covers AB8 to AB13, AB16, AB23, AB24 and AB32.
 """
@@ -128,7 +128,7 @@ def test_the_webhook_needs_no_user_token(
     assert response.status_code == 200
 
 
-# ==== the whole flow: pending mode, then the webhook (spec section 8.3)
+# ==== the whole flow: pending mode, then the webhook (architecture §6.3)
 
 
 def test_pending_mode_step_by_step(

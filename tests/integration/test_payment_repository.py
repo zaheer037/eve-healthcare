@@ -1,5 +1,5 @@
 """Payment queries on a real database: what each returns, the locks it takes, and the index it
-uses (spec section 5.4)."""
+uses (architecture §3.4)."""
 
 import uuid
 from collections.abc import Iterator
@@ -106,7 +106,7 @@ def test_lock_takes_no_key_update_so_a_child_insert_is_not_blocked(
     db_session: Session, session: Session, db_engine: Engine
 ) -> None:
     """A child row takes FOR KEY SHARE on the payment. FOR UPDATE would conflict with it, and two
-    webhooks for one payment would deadlock (sharp edge 29). FOR NO KEY UPDATE does not."""
+    webhooks for one payment would deadlock. FOR NO KEY UPDATE does not."""
     payment = make_payment(db_session)
     PaymentRepository(session).lock(payment.id)
     with Session(db_engine) as child:
@@ -124,7 +124,7 @@ def test_lock_takes_no_key_update_so_a_child_insert_is_not_blocked(
 def test_lock_refreshes_an_object_that_the_session_already_holds(
     db_session: Session, session: Session
 ) -> None:
-    """Without populate_existing the ORM would hand back the stale object (sharp edge 22)."""
+    """Without populate_existing the ORM would hand back the stale object."""
     payment = make_payment(db_session)
     repository = PaymentRepository(session)
     held = repository.lock(payment.id)
@@ -200,7 +200,7 @@ def test_the_webhook_locks_a_booking_by_its_id(db_session: Session, session: Ses
     assert locked.id == booking.id
 
 
-# ==== every query uses the index that spec section 5.4 names
+# ==== every query uses the index that architecture §3.4 names
 
 
 def test_each_query_uses_its_index(db_engine: Engine, db_session: Session) -> None:

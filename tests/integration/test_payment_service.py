@@ -1,4 +1,4 @@
-"""PaymentService.pay and get_owned on a real database (spec sections 7.4 and 8.1).
+"""PaymentService.pay and get_owned on a real database (architecture §§5.4 and 6.1).
 
 Covers AB4, AB5, AB20, AB30 and AB31.
 """
@@ -103,7 +103,7 @@ def test_a_successful_payment_confirms_the_booking(
 def test_a_failed_payment_fails_the_booking_for_good(
     db_session: Session, make_service: ServiceFactory
 ) -> None:
-    """Decision D5: a failed payment ends the booking, and the user books again."""
+    """ADR-09: a failed payment ends the booking, and the user books again."""
     user = make_user(db_session)
     booking = make_booking(db_session, user=user)
     service = make_service()
@@ -317,7 +317,7 @@ def test_the_statement_counts_are_four_three_and_two(
     db_engine: Engine, db_session: Session, make_service: ServiceFactory
 ) -> None:
     """Create: the lock, the live payment, INSERT payment, UPDATE booking. Pending mode skips the
-    UPDATE. A replay stops after the live payment (spec section 7.2)."""
+    UPDATE. A replay stops after the live payment (architecture §5.2)."""
     user = make_user(db_session)
     settled = make_booking(db_session, user=user, appointment_at=future_slot(3))
     pending = make_booking(db_session, user=user, appointment_at=future_slot(4))

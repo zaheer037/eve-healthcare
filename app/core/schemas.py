@@ -1,4 +1,4 @@
-"""Input types shared by every schema (spec section 7.1)."""
+"""Input types shared by every schema (architecture §5.1)."""
 
 import unicodedata
 from decimal import Decimal
@@ -62,9 +62,9 @@ CurrencyCode = Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 class PatchModel(BaseModel):
     """The base of every update model. A PATCH applies only the fields that the client sent.
 
-    Three rules protect the database (spec section 7.1). An unknown field is a 422. An empty body
+    Three rules protect the database (architecture §5.1). An unknown field is a 422. An empty body
     is a 422. An explicit `null` is a 422 for every field that is not listed in `nullable`, because
-    without this guard `{"name": null}` reached the database and gave a 500 (sharp edge 44).
+    without this guard `{"name": null}` reached the database and gave a 500.
     Every field of a subclass has the default `None`.
     """
 

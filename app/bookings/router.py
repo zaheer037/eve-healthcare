@@ -1,4 +1,4 @@
-"""Booking endpoints (spec section 7.2). Every one needs a signed-in user."""
+"""Booking endpoints (architecture §5.2). Every one needs a signed-in user."""
 
 import uuid
 from typing import Annotated
@@ -94,7 +94,7 @@ def list_bookings(
 def get_booking(
     booking_id: uuid.UUID, user: CurrentUser, service: BookingServiceDep
 ) -> BookingDetailRead:
-    """A booking of another user answers 403, and an unknown ID answers 404 (decision D3)."""
+    """A booking of another user answers 403, and an unknown ID answers 404 (ADR-07)."""
     return BookingDetailRead.model_validate(service.get_owned(user.id, booking_id))
 
 

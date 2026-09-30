@@ -1,5 +1,5 @@
 """The provider simulator against the running app: duplicates and retries make one state change
-(T4.7, spec section 8.4)."""
+(T4.7, architecture §6.4)."""
 
 import json
 import time

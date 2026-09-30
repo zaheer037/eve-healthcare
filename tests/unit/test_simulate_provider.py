@@ -1,4 +1,4 @@
-"""The provider simulator script: a signed sender with duplicates and retries (spec section 8.4)."""
+"""The provider simulator script: a signed sender with duplicates and retries (§6.4)."""
 
 import json
 import threading

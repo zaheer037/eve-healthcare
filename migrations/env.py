@@ -16,7 +16,7 @@ config = context.config
 target_metadata = Base.metadata
 
 # Autogenerate cannot see everything. compare_server_default and the opt-in plugin below make it
-# compare defaults and named CHECK constraints (spec section 5.6). Hand-written CHECKs and partial
+# compare defaults and named CHECK constraints (architecture §3.6). Hand-written CHECKs and partial
 # indexes still go into the migration by hand.
 AUTOGENERATE_PLUGINS = ["alembic.autogenerate.*", "alembic.ext.checkconstraint_byname"]
 

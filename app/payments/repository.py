@@ -1,4 +1,4 @@
-"""Payment queries. SQL only: no business rule and no commit (spec section 4.2)."""
+"""Payment queries. SQL only: no business rule and no commit (architecture §2.2)."""
 
 import uuid
 
@@ -36,8 +36,8 @@ class PaymentRepository:
         A payment is never deleted, so a missing row is a bug and raises `NoResultFound`.
 
         `FOR NO KEY UPDATE`, because a child insert takes `FOR KEY SHARE` on this row and a plain
-        `FOR UPDATE` would conflict with it (sharp edge 29). `populate_existing`, or the ORM hands
-        back a stale object that the session already holds (sharp edge 22).
+        `FOR UPDATE` would conflict with it. `populate_existing`, or the ORM hands
+        back a stale object that the session already holds.
         """
         stmt = (
             select(Payment)
@@ -51,7 +51,8 @@ class PaymentRepository:
         """Does another payment of this provider already carry this reference?
 
         Served by `uq_payments_provider_ref`. It cannot see an update that another transaction has
-        not committed, so the unique index stays the last word and the webhook retries (spec 8.3).
+        not committed, so the unique index stays the last word and the webhook retries
+        (architecture §6.3).
         """
         stmt = select(
             exists().where(

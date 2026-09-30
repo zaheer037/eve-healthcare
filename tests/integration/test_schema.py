@@ -57,7 +57,7 @@ def test_every_foreign_key_has_an_index(db_engine: Engine) -> None:
 
 
 def test_the_schema_has_no_native_enum_type(db_engine: Engine) -> None:
-    """A bare `Mapped[Enum]` creates a native enum that stores member names (spec section 5.2)."""
+    """A bare `Mapped[Enum]` creates a native enum that stores member names (architecture §3.2)."""
     with db_engine.connect() as connection:
         enums = connection.execute(text("SELECT typname FROM pg_type WHERE typtype = 'e'")).all()
     assert enums == []

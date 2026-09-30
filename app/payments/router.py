@@ -1,4 +1,4 @@
-"""Payment endpoints (spec section 7.2). Each needs a signed-in user, except the webhook."""
+"""Payment endpoints (architecture §5.2). Each needs a signed-in user, except the webhook."""
 
 import uuid
 from http import HTTPStatus
@@ -110,12 +110,12 @@ def create_payment(
 def get_payment(
     payment_id: uuid.UUID, user: CurrentUser, service: PaymentServiceDep
 ) -> PaymentRead:
-    """A payment of another user answers 403, and an unknown ID answers 404 (decision D3)."""
+    """A payment of another user answers 403, and an unknown ID answers 404 (ADR-07)."""
     return payment_read(service.get_owned(user.id, payment_id))
 
 
 # The handler declares no body, so FastAPI cannot document one. This does, and it documents the
-# signature header that the dependency reads (spec section 8.5).
+# signature header that the dependency reads (architecture §6.5).
 WEBHOOK_DOCS = {
     "parameters": [
         {

@@ -1,4 +1,4 @@
-"""The business events of spec section 10.2: what each flow logs, and what it must not.
+"""The business events of architecture §8.2: what each flow logs, and what it must not.
 
 An event carries ids and never a body, an email, a secret or a row value (AB28).
 """

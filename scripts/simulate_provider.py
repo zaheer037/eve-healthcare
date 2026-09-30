@@ -6,7 +6,7 @@
 Every run makes a fresh event ID. `--repeat` sends that event again, so the copies are duplicates,
 and `--concurrent` sends the copies at the same moment. Like a real provider, it retries a network
 error and a 5xx (also 408 and 429) with exponential backoff and jitter. It stops at once on a 2xx
-and on any other 4xx, because a request that is wrong stays wrong (spec section 8.4). The secret
+and on any other 4xx, because a request that is wrong stays wrong (architecture §6.4). The secret
 comes from `--secret`, the `WEBHOOK_SECRET` variable or `.env`, and is never printed.
 """
 
@@ -151,7 +151,8 @@ def deliver(  # noqa: PLR0913  # the transport, the clock and the dice are injec
     """Deliver one event, and retry what is worth a retry.
 
     Every attempt signs again with the current time, so a long backoff leaves no stale timestamp.
-    The bytes, and so the event ID, stay the same, which is what makes a retry safe (spec 8.2).
+    The bytes, and so the event ID, stay the same, which is what makes a retry safe
+    (architecture §6.2).
     """
     attempt = 0
     while True:

@@ -1,4 +1,4 @@
-"""Booking queries. SQL only: no business rule and no commit (spec section 4.2)."""
+"""Booking queries. SQL only: no business rule and no commit (architecture §2.2)."""
 
 import uuid
 from dataclasses import dataclass
@@ -33,7 +33,7 @@ class BookingRepository:
         """The price row of a test that a centre offers, with the centre and the test.
 
         One statement over three tables. A row exists only when the test is available at the
-        centre and both parents are active. Every join runs on a primary key (spec section 5.4).
+        centre and both parents are active. Every join runs on a primary key (architecture §3.4).
         """
         stmt = (
             select(Centre, DiagnosticTest, CentreTest.price, CentreTest.currency)
@@ -128,7 +128,7 @@ class BookingRepository:
 
     @staticmethod
     def _locking_select(*criteria: ColumnElement[bool]) -> Select[tuple[Booking]]:
-        """The one form of a booking lock, so no caller can forget a rule of spec section 4.2:
+        """The one form of a booking lock, so no caller can forget a rule of architecture §2.2:
 
         1. `FOR NO KEY UPDATE`, because a child insert takes `FOR KEY SHARE` on this row.
         2. `populate_existing`, or the ORM returns a stale object that is already in the session.
@@ -146,7 +146,7 @@ class BookingRepository:
         """Lock the user's booking, or return `None`.
 
         The owner predicate is in the lock query, so a stranger finds no row and never waits behind
-        the owner's lock (sharp edge 30).
+        the owner's lock.
         """
         stmt = self._locking_select(Booking.id == booking_id, Booking.user_id == user_id)
         return self._session.scalar(stmt)

@@ -1,4 +1,4 @@
-"""Seed the admin account and a sample catalog. Safe to run again (spec section 5.6).
+"""Seed the admin account and a sample catalog. Safe to run again (architecture §3.6).
 
     uv run python -m scripts.seed      # on a laptop, or `make seed`
     python -m scripts.seed             # in the container, after `alembic upgrade head`
@@ -52,7 +52,8 @@ class SeedReport:
 def admin_credentials(settings: Settings) -> tuple[str, str]:
     """The admin's email and password. The login form must accept them, or nobody could sign in.
 
-    Production also refuses a placeholder and a password below `PASSWORD_MIN_LENGTH` (spec 10.3).
+    Production also refuses a placeholder and a password below `PASSWORD_MIN_LENGTH`
+    (architecture §8.3).
     """
     if not settings.admin_email or settings.admin_password is None:
         raise SeedError("Set ADMIN_EMAIL and ADMIN_PASSWORD to create the admin.")

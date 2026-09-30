@@ -1,4 +1,4 @@
-"""Webhook signatures (spec section 8.5): sign and verify agree, and every failure looks alike."""
+"""Webhook signatures (architecture §6.5): sign and verify agree, and every failure looks alike."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -7,7 +7,7 @@ import pytest
 from app.core.errors import WebhookSignatureInvalid
 from app.payments.signature import header_for, sign, verify
 
-# The example of section 8.5. The signature in the spec was made with `openssl` as well.
+# The example of architecture §6.5. The signature in the document was made with `openssl` too.
 SECRET = "whsec_demo_only_not_a_real_secret_0123456789"
 TIMESTAMP = 1790000000
 BODY = (

@@ -1,4 +1,4 @@
-"""The in-process payment simulator (spec section 8.1). No I/O, so a test chooses its answer."""
+"""The in-process payment simulator (architecture §6.1). No I/O, so a test chooses its answer."""
 
 import random
 import uuid

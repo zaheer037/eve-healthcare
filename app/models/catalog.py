@@ -1,4 +1,4 @@
-"""Centres, diagnostic tests and the price of a test at a centre (spec section 5.3).
+"""Centres, diagnostic tests and the price of a test at a centre (architecture §3.3).
 
 Rows are never deleted: bookings refer to them, so `is_active` and `is_available` replace deletion.
 """

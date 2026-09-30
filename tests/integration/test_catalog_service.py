@@ -365,7 +365,7 @@ def test_an_unknown_test_is_not_found_everywhere(service: CatalogService) -> Non
             action()
 
 
-# ==== statement budgets (spec 7.2)
+# ==== statement budgets (architecture §5.2)
 
 
 def statements_of(db_engine: Engine, action: Callable[[CatalogService], object]) -> int:
@@ -435,7 +435,7 @@ def test_the_same_call_twice_leaves_the_same_state(
 def test_an_update_moves_updated_at_and_keeps_created_at(
     db_session: Session, service: CatalogService
 ) -> None:
-    """The upsert bypasses the ORM `onupdate`, so it sets `updated_at` itself (sharp edge 36)."""
+    """The upsert bypasses the ORM `onupdate`, so it sets `updated_at` itself."""
     centre, test = make_centre(db_session), make_diagnostic_test(db_session)
     put_price(service, centre, test, "100")
     created_at, updated_at = db_session.execute(

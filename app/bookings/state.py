@@ -1,4 +1,4 @@
-"""The booking state machine (spec section 6.1). Pure: no database and no framework.
+"""The booking state machine (architecture §4.1). Pure: no database and no framework.
 
 The table below is data, not a chain of `if` statements, so a reviewer reads every legal move at
 a glance and a test walks the whole 4 x 4 grid.

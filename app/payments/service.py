@@ -22,9 +22,10 @@ from app.payments.simulator import PaymentSimulator
 
 log = structlog.get_logger()
 
-PROVIDER = "SIMULATOR"  # ponytail: one provider -> route per provider (spec section 8.5)
+PROVIDER = "SIMULATOR"  # ponytail: one provider -> route per provider (architecture §6.5)
 # A rival transaction can take a provider reference between the check and the write. The unique
-# index stops the second one, and a second run of the transaction then sees the first (spec 8.3).
+# index stops the second one, and a second run of the transaction then sees the first
+# (architecture §6.3).
 RETRIED_CONSTRAINTS = frozenset({"uq_payments_provider_ref"})
 
 
@@ -80,7 +81,7 @@ class PaymentService:
     def pay(
         self, *, user_id: uuid.UUID, booking_id: uuid.UUID, simulate: PaymentStatus | None
     ) -> PayOutcome:
-        """Pay a booking, in one short transaction (spec section 8.1).
+        """Pay a booking, in one short transaction (architecture §6.1).
 
         It locks the user's booking and looks for a live payment first. A live payment is returned
         as it is (a replay), even for a booking that was cancelled after it succeeded. Otherwise
@@ -153,7 +154,7 @@ class PaymentService:
         return PaymentView(*found)
 
     def handle_webhook(self, payload: WebhookPayload) -> WebhookAck:
-        """Store a provider event and apply it, in one transaction (spec sections 8.1 and 8.5).
+        """Store a provider event and apply it, in one transaction (architecture §§6.1 and 6.5).
 
         The event is stored first, with no payment, so a duplicate is one probe of a unique index
         and takes no lock. Then the booking is locked, then the payment (the lock order), the event
@@ -236,7 +237,7 @@ class PaymentService:
 
     @staticmethod
     def _log_settled(settled: Settled, *, source: str) -> None:
-        """A payment left `PENDING` (spec section 10.2, question Q2). `source` is `api` or
+        """A payment left `PENDING` (architecture §8.2, question Q2). `source` is `api` or
         `webhook`. The booking event follows when the booking moved too."""
         payment = settled.payment
         log.info(
@@ -258,7 +259,7 @@ class PaymentService:
 
     @staticmethod
     def _log_delivery(payload: WebhookPayload, ack: WebhookAck) -> None:
-        """One event per delivery (spec section 10.2). Ids only: the body of an event, with its
+        """One event per delivery (architecture §8.2). Ids only: the body of an event, with its
         amount and references, never goes to the log."""
         ids = {"event_id": payload.event_id, "payment_id": str(payload.payment_id)}
         outcome = ack.outcome.value if ack.outcome else None

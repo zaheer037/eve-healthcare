@@ -1,4 +1,4 @@
-"""The login throttle: per IP and per account, with fixed-size keys (spec section 9.2)."""
+"""The login throttle: per IP and per account, with fixed-size keys (architecture §7.2)."""
 
 import pytest
 

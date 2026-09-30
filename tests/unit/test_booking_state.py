@@ -1,4 +1,4 @@
-"""The booking state machine: every move in the 4 x 4 grid (spec section 6.1)."""
+"""The booking state machine: every move in the 4 x 4 grid (architecture §4.1)."""
 
 import itertools
 

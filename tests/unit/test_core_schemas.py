@@ -1,4 +1,4 @@
-"""The shared text types: trimmed, non-empty, free of control characters (spec section 7.1)."""
+"""The shared text types: trimmed, non-empty, free of control characters (architecture §5.1)."""
 
 from typing import Annotated
 

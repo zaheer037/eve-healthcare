@@ -2,7 +2,7 @@
 
 They are pure ASGI, not `BaseHTTPMiddleware`, so they do not buffer bodies and do not break
 context propagation. The request context lives in `scope["state"]`, not in a contextvar: a
-contextvar that a middleware binds is cleared before the catch-all 500 handler runs (sharp edge 48).
+contextvar that a middleware binds is cleared before the catch-all 500 handler runs.
 """
 
 import re
@@ -24,7 +24,7 @@ log = structlog.get_logger()
 
 def located(request: Request, response: Response, route_name: str, **path_params: object) -> None:
     """Set `Location` to a path. `url_path_for` returns no host, so a hostile Host header cannot
-    reach it, and a later `/v1` prefix needs no change here (sharp edge 47)."""
+    reach it, and a later `/v1` prefix needs no change here."""
     response.headers["Location"] = str(request.app.url_path_for(route_name, **path_params))
 
 
@@ -71,8 +71,8 @@ class NoStoreMiddleware:
     """Put `Cache-Control: no-store` and `Pragma: no-cache` on every response that passes through.
 
     RFC 6749 section 5.1 asks for both on token responses. A header set inside a route reaches
-    only the 200 (sharp edge 45). The catch-all 500 response bypasses this middleware, so its
-    handler sets the same headers (sharp edge 51).
+    only the 200. The catch-all 500 response bypasses this middleware, so its
+    handler sets the same headers.
     """
 
     def __init__(self, app: ASGIApp) -> None:
