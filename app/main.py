@@ -15,6 +15,8 @@ from app.core.db import create_db_engine, create_session_factory
 from app.core.http import AccessLogMiddleware, NoStoreMiddleware, RequestIdMiddleware
 from app.core.logging import configure_logging
 from app.core.problem import install_exception_handlers
+from app.core.security import HashSlots, dummy_hash
+from app.core.throttle import LoginThrottle
 
 log = structlog.get_logger()
 
@@ -28,6 +30,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = create_db_engine(settings)
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
+    app.state.hash_slots = HashSlots(settings.hash_max_concurrency)
+    app.state.throttle = LoginThrottle(settings)  # counters start empty with every app
+    app.state.dummy_hash = dummy_hash()
     log.info("app.started", environment=settings.environment)
     try:
         yield

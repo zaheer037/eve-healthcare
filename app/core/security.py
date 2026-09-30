@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from functools import cache
 
 import jwt
 from pwdlib import PasswordHash
@@ -38,10 +39,12 @@ def verify_password(plain: str, hashed: str) -> bool:
     return _password_hash.verify(_nfc(plain), hashed)
 
 
-def make_dummy_hash() -> str:
-    """A real hash of a random password, made at start-up with the real hasher.
+@cache
+def dummy_hash() -> str:
+    """A real hash of a random password, made once per process with the real hasher.
 
-    An unknown email is verified against it, so it costs as much as a wrong password.
+    An unknown email is verified against it, so it costs as much as a wrong password. The app
+    asks for it at start-up, so the 60 ms are paid there and not by the first unknown login.
     """
     return hash_password(secrets.token_urlsafe(24))
 

@@ -18,9 +18,9 @@ from app.core.security import (
     HashSlots,
     create_access_token,
     decode_access_token,
+    dummy_hash,
     hash_password,
     jwt_api,
-    make_dummy_hash,
     verify_password,
 )
 from tests.support import SettingsFactory
@@ -65,14 +65,14 @@ def test_nfc_keeps_compatibility_forms_apart() -> None:
 def test_the_dummy_hash_uses_the_parameters_of_a_real_hash() -> None:
     """Same parameters mean the same cost, so an unknown email takes as long as a wrong password."""
     real = ARGON2_PARAMETERS.match(hash_password(PASSWORD))
-    dummy = ARGON2_PARAMETERS.match(make_dummy_hash())
+    dummy = ARGON2_PARAMETERS.match(dummy_hash())
     assert real is not None
     assert dummy is not None
     assert real.group(0) == dummy.group(0)
 
 
 def test_no_password_matches_the_dummy_hash() -> None:
-    assert verify_password(PASSWORD, make_dummy_hash()) is False
+    assert verify_password(PASSWORD, dummy_hash()) is False
 
 
 # ---------------------------------------------------------------- access tokens
