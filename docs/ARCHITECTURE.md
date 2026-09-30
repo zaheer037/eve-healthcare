@@ -188,7 +188,7 @@ Every feature router is a `TolerantRouter`, and the app sets `redirect_slashes=F
 
 **`Allow` on `405`.** Starlette lists the methods of the first matching route only. So `PUT /bookings/` answers `Allow: GET`, although the path also serves `HEAD` and `POST` (RFC 9110 §15.5.6 asks for every supported method). The problem handler for `405` builds the header itself. It asks each route whether it fully matches the request path with each served method (`GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`), through Starlette's `route.matches`. It cannot read a flat list of routes. FastAPI 0.137 and newer keep an included router behind a private wrapper.
 
-`BodyLimitMiddleware` is a pure ASGI middleware with one cap (64 KiB, a setting). A request with a `Content-Length` above the cap gets a problem+json `413` before the application runs. A chunked body has no length header, so the middleware reads at most the cap into memory and replays it to the application. A chunked body over the cap gets the same `413`, and the application never runs, even on a route that ignores the body. The response carries every problem field, including `request_id` and `instance`. Starlette's own middleware answers `text/plain` instead, and for a route without a body it runs the handler before it answers. The largest legitimate body is under 2 KiB.
+`BodyLimitMiddleware` is a pure ASGI middleware with one cap (64 KiB, a setting). A request with a `Content-Length` above the cap gets a problem+json `413` before the application runs. A chunked body has no length header, so the middleware reads at most the cap into memory and replays it to the application. A chunked body over the cap gets the same `413`, and the application never runs, even on a route that ignores the body. A request that names both a `Content-Length` and a chunked encoding gets a `400` (RFC 9112 section 6.1). The httptools parser refuses it already. The h11 parser passes both headers on, and a small length would hide a chunked body of any size from the cap. The response carries every problem field, including `request_id` and `instance`. Starlette's own middleware answers `text/plain` instead, and for a route without a body it runs the handler before it answers. The largest legitimate body is under 2 KiB.
 
 `NoStoreMiddleware` adds `Cache-Control: no-store` and `Pragma: no-cache` to every response that passes through it: successes, `401`, `404`, `405`, `413` and `422`. The catch-all `500` response does not pass through it, because Starlette sends that response from `ServerErrorMiddleware`, outside every user middleware. So the `500` handler sets `Cache-Control`, `Pragma` and `X-Request-ID` itself. A header that a route or a dependency sets reaches only the `200`.
 
@@ -748,7 +748,7 @@ Each entry of `errors` maps `loc` to `field` (a dotted path), maps `msg` to `mes
 
 | Code | HTTP | Raised when |
 |---|---|---|
-| `BAD_REQUEST` | 400 | The server cannot read the request body at all, for example a malformed form or bytes that are not UTF-8. |
+| `BAD_REQUEST` | 400 | The server cannot read the request body at all, for example a malformed form, bytes that are not UTF-8, or both `Content-Length` and `Transfer-Encoding`. |
 | `NOT_AUTHENTICATED` | 401 | The `Authorization` header is missing or malformed. The response carries `WWW-Authenticate: Bearer`. |
 | `INVALID_TOKEN` | 401 | The token has a bad signature, wrong algorithm or expired lifetime, or names an unknown user. `WWW-Authenticate: Bearer error="invalid_token"`. |
 | `INVALID_CREDENTIALS` | 401 | The email or password is wrong. The response is identical for both. `WWW-Authenticate: Bearer`. |
@@ -1265,6 +1265,7 @@ Each abuse case is an automated test. The list grows as new cases appear.
 | AB33 | `PATCH` with `{"name": null}` or `{}` | `422`, and no `500` |
 | AB34 | `HEAD` on a `GET` route | `200` with no body |
 | AB35 | A client sends `X-Forwarded-For: 6.6.6.6, <real address>` through the proxy | The throttle keys on the address that the proxy appended |
+| AB36 | A request with `Content-Length: 5` and `Transfer-Encoding: chunked`, then a 200 KB body, sent to a server that runs the h11 parser | `400`, and the application never runs |
 
 ### 7.5 Privacy notes (informational, not legal advice)
 
@@ -1440,10 +1441,10 @@ Rules: real PostgreSQL only (never SQLite, because locks, partial indexes and `O
 | Security units | Hash and verify (NFC, no stripping). The hashing semaphore never runs more slots than it has and turns surplus callers away at once. Token encode and decode, with the real clock and the key-length option. Signature sign and verify. Throttle key and limits. The dummy hash costs as much as a real one. | PDF §1, §3 |
 | Configuration | Production refuses each unsafe setting (AB26), a placeholder secret (including the §6.5 example) and a short secret. `ENVIRONMENT` is required. `CORS_ORIGINS` parses a comma list. `.env` is read when it exists. | Bonus |
 | Logging | Each event in §8.2 appears, with the request ID. No secret, email, query string or row value appears in the structlog output. The same holds for the standard output and standard error of a real `fastapi run` process (AB28). A constraint error logs only its name. The catch-all `500` body and its `X-Request-ID` header carry the request ID, and the response has `Cache-Control: no-store`. The `http.request` event for a `500` logs status `500`. | Bonus |
-| OpenAPI and HTTP | Every operation has a summary, a unique `operationId` and its error responses. The route inventory matches §5.2. `HEAD` works on every `GET` route (AB34). `Cache-Control: no-store` is on every response, `404`, `405`, `422` and the catch-all `500` included. A `405` lists every method of the path in `Allow`. No response redirects. | Bonus |
+| OpenAPI and HTTP | Every operation has a summary, a unique `operationId` and its error responses. The route inventory matches §5.2. `HEAD` works on every `GET` route (AB34). `Cache-Control: no-store` is on every response, `404`, `405`, `422` and the catch-all `500` included. A `405` lists every method of the path in `Allow`. No response redirects. A request that names both `Content-Length` and `Transfer-Encoding` gets `400` (AB36). | Bonus |
 | Database | Migrations run from empty. `alembic check` is clean. The schema from the migrations equals the schema from the models, constraints and indexes included. Every foreign key has an index (query in §3.6). The schema has no native enum type. Each rule in §3.5 rejects a bad row and accepts a good one. Seed runs twice without error. | PDF §2, Bonus |
 
-The suite will hold about 130 to 150 tests. This count is an estimate.
+The suite holds about 1,370 tests. The grids (every booking transition, every row of `settle()`, every rejected input) run each case as its own test, so the count is higher than the number of behaviours.
 
 ### 9.4 Tooling and gates
 

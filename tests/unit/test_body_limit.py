@@ -114,16 +114,22 @@ async def call_asgi(
     return sent
 
 
-def test_a_malformed_content_length_is_a_400() -> None:
+@pytest.mark.parametrize(
+    "headers",
+    [
+        pytest.param([(b"content-length", b"12abc")], id="malformed-content-length"),
+        # RFC 9112 section 6.1 lets a server refuse this. The h11 parser passes both headers on,
+        # and the small length would hide a chunked body of any size from the cap.
+        pytest.param(
+            [(b"content-length", b"5"), (b"transfer-encoding", b"chunked")], id="both-framings"
+        ),
+    ],
+)
+def test_a_request_with_broken_framing_is_a_400(headers: list[tuple[bytes, bytes]]) -> None:
     async def never(scope: Scope, receive: Receive, send: Send) -> None:
         raise AssertionError("the application must not run")
 
-    scope: Scope = {
-        "type": "http",
-        "method": "POST",
-        "path": "/echo",
-        "headers": [(b"content-length", b"12abc")],
-    }
+    scope: Scope = {"type": "http", "method": "POST", "path": "/echo", "headers": headers}
     middleware = BodyLimitMiddleware(never, max_bytes=CAP)
     sent = asyncio.run(call_asgi(middleware, scope, {"type": "http.request"}))
     assert sent[0]["status"] == 400

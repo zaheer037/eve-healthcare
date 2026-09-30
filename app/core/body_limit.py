@@ -15,6 +15,10 @@ class BodyLimitMiddleware:
     reads at most `max_bytes` into memory and replays it to the application. Starlette's own
     middleware answers `text/plain` instead, and for a route without a body it runs the handler
     first (architecture §2.3).
+
+    A request that names both a length and a chunked encoding is refused (RFC 9112 section 6.1).
+    The h11 parser passes both headers on, and a small `Content-Length` would hide a chunked body
+    of any size from the cap. The httptools parser refuses the request before it gets here.
     """
 
     def __init__(self, app: ASGIApp, max_bytes: int) -> None:
@@ -25,16 +29,20 @@ class BodyLimitMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        declared = Headers(scope=scope).get("content-length")
-        if declared is not None:
-            if not declared.isdecimal():
-                await self._reject(errors.BadRequest(), scope, receive, send)
-            elif int(declared) > self.max_bytes:
-                await self._reject(errors.PayloadTooLarge(), scope, receive, send)
-            else:
-                await self.app(scope, receive, send)
-            return
-        await self._read_chunked(scope, receive, send)
+        headers = Headers(scope=scope)
+        declared = headers.get("content-length")
+        if declared is None:
+            await self._read_chunked(scope, receive, send)
+        elif "transfer-encoding" in headers:
+            error = errors.BadRequest("Send Content-Length or Transfer-Encoding, not both.")
+            await self._reject(error, scope, receive, send)
+        elif not declared.isdecimal():
+            error = errors.BadRequest("Content-Length must be a whole number.")
+            await self._reject(error, scope, receive, send)
+        elif int(declared) > self.max_bytes:
+            await self._reject(errors.PayloadTooLarge(), scope, receive, send)
+        else:
+            await self.app(scope, receive, send)
 
     async def _read_chunked(self, scope: Scope, receive: Receive, send: Send) -> None:
         chunks: list[Message] = []
