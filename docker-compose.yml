@@ -7,7 +7,7 @@ x-env: &env
   WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-only-webhook-secret-change-me-0123456789}
   ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD:-dev-only-admin-password}
-  SEED_ON_START: ${SEED_ON_START:-false}  # T2.5 turns this on with the seed script
+  SEED_ON_START: ${SEED_ON_START:-true}
 
 x-app: &app
   image: eve-healthcare-api:dev

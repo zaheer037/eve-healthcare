@@ -34,7 +34,7 @@ fmt: ## Ruff: fix and format
 	uv run ruff format .
 
 typecheck: ## mypy in strict mode
-	uv run mypy app
+	uv run mypy
 
 migrate: ## Apply the migrations
 	uv run alembic upgrade head

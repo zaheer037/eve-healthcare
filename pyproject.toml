@@ -92,6 +92,7 @@ known-first-party = ["app", "scripts"]
 # ---------------------------------------------------------------- mypy
 [tool.mypy]
 strict = true
+files = ["app", "scripts"]
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
 
