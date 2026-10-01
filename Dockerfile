@@ -1,4 +1,4 @@
-FROM python:3.12-slim-trixie AS builder
+FROM python:3.14-slim-trixie AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /usr/local/bin/uv
 WORKDIR /srv
 COPY pyproject.toml uv.lock ./
@@ -15,7 +15,7 @@ RUN uv sync --frozen
 COPY tests ./tests
 CMD ["pytest", "-q"]
 
-FROM python:3.12-slim-trixie
+FROM python:3.14-slim-trixie
 RUN useradd --uid 10001 --create-home app
 WORKDIR /srv
 # Root owns the code. The app user reads it and cannot rewrite it.
