@@ -263,7 +263,7 @@ uvicorn==0.54.0
     # via
     #   fastapi
     #   fastapi-cli
-uvloop==0.22.1 ; platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'
+uvloop==0.23.0 ; platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'
     # via uvicorn
 virtualenv==21.14.1
     # via pre-commit
